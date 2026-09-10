@@ -7,6 +7,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "MicMonitor", targets: ["MicMonitor"]),
+        .library(name: "MediaControl", targets: ["MediaControl"]),
+        .library(name: "BeQuietCore", targets: ["BeQuietCore"]),
         .executable(name: "bequiet", targets: ["BeQuietCLI"]),
     ],
     targets: [
@@ -14,9 +16,18 @@ let package = Package(
             name: "MicMonitor",
             linkerSettings: [.linkedFramework("CoreAudio")]
         ),
+        .target(name: "MediaControl"),
+        .target(
+            name: "BeQuietCore",
+            dependencies: ["MediaControl", "MicMonitor"]
+        ),
         .executableTarget(
             name: "BeQuietCLI",
-            dependencies: ["MicMonitor"]
+            dependencies: ["BeQuietCore", "MediaControl", "MicMonitor"]
+        ),
+        .testTarget(
+            name: "BeQuietCoreTests",
+            dependencies: ["BeQuietCore"]
         ),
     ]
 )

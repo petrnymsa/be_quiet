@@ -7,7 +7,7 @@ enum WatchCommand {
     static func run() async {
         let monitor = MicMonitor()
         let events = monitor.start()
-        let interrupts = installInterruptHandlers { monitor.stop() }
+        let interrupts = Interrupts.install { monitor.stop() }
         defer { interrupts.forEach { $0.cancel() } }
 
         Output.line("bequiet watch — CoreAudio microphone activity (Ctrl-C to stop)")
@@ -93,35 +93,10 @@ enum WatchCommand {
             )
         }
 
-        let fallback = snapshot.usesDeviceLevelFallback ? "  fallback=1" : ""
-        Output.line(
-            "Aggregates: process=\(flag(snapshot.processLevelActive)) "
-                + "device=\(flag(snapshot.deviceLevelActive))\(fallback)"
-                + "  → MIC \(snapshot.micActive ? "ACTIVE" : "INACTIVE") (\(snapshot.activityReason))"
-        )
+        Output.line(snapshot.aggregatesLine)
     }
 
     private static func names(in snapshot: MicSnapshot) -> [AudioObjectID: String] {
         Dictionary(uniqueKeysWithValues: snapshot.devices.map { ($0.id, $0.name) })
-    }
-
-    private static func flag(_ value: Bool) -> String { value ? "1" : "0" }
-
-    // MARK: - Interrupts
-
-    /// SIGINT/SIGTERM are ignored by the default disposition and observed through
-    /// dispatch sources instead, so the monitor can shut down before the process
-    /// exits and the event loop can drain.
-    private static func installInterruptHandlers(
-        _ handler: @escaping @Sendable () -> Void
-    ) -> [DispatchSourceSignal] {
-        let queue = DispatchQueue(label: "cz.nymsa.BeQuiet.cli.signal")
-        return [SIGINT, SIGTERM].map { number in
-            signal(number, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: number, queue: queue)
-            source.setEventHandler(handler: handler)
-            source.resume()
-            return source
-        }
     }
 }

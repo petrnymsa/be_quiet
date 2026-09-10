@@ -33,6 +33,9 @@ enum Output {
     }
 }
 
+/// `1`/`0`, the compact form every CLI line uses for booleans.
+func flag(_ value: Bool) -> String { value ? "1" : "0" }
+
 extension String {
     func padded(to width: Int) -> String {
         count >= width ? self : self + String(repeating: " ", count: width - count)
