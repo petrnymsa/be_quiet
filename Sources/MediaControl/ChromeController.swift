@@ -176,10 +176,12 @@ extension NSAppleEventDescriptor {
 private enum JavaScript {
     /// Pauses only what is actually playing and marks those elements, so that
     /// resume can tell them apart from whatever the user paused themselves.
+    /// Elements fed by a live `MediaStream` (`srcObject`) are the call itself —
+    /// Meet's participants — and are never touched.
     static let pause = """
         (() => {
           const playing = [...document.querySelectorAll('video,audio')]
-            .filter(m => !m.paused && !m.ended && m.readyState > 2);
+            .filter(m => !m.paused && !m.ended && m.readyState > 2 && !m.srcObject);
           playing.forEach(m => { m.dataset.bequietPaused = '1'; m.pause(); });
           return playing.length ? '1' : '0';
         })()
