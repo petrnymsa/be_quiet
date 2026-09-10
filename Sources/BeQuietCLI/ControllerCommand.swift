@@ -72,5 +72,13 @@ extension SpotifyController: InspectableController {
 }
 
 extension ChromeController: InspectableController {
-    var stateDescription: String? { nil }
+    var stateDescription: String? {
+        switch javaScriptAccess() {
+        case .available: "JavaScript from Apple Events enabled"
+        case .disabled: "JavaScript from Apple Events DISABLED — \(javaScriptDisabledHint)"
+        case .noScriptableTab: "no http(s) tab open to probe"
+        case let .failed(message): "probe failed: \(message)"
+        case .browserNotRunning: nil
+        }
+    }
 }

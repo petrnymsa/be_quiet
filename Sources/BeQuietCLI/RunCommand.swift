@@ -17,9 +17,10 @@ enum RunCommand {
         let events = monitor.start()
         let interrupts = Interrupts.install { monitor.stop() }
 
+        let controllers: [any MediaController] = [SpotifyController(), ChromeController()]
         let log = TransitionLog()
         let coordinator = PauseCoordinator(
-            controllers: [SpotifyController(), ChromeController()],
+            controllers: controllers,
             settings: settings,
             onTransition: { from, to in log.record(from, to) }
         )
@@ -33,6 +34,7 @@ enum RunCommand {
         )
         let initial = monitor.snapshot()
         Output.line(initial.aggregatesLine)
+        warnAboutBrowserScripting(controllers, enabled: settings.enabledControllers)
         Output.line()
 
         // `start()` reports transitions only, so the current state is fed in by hand.
@@ -50,6 +52,16 @@ enum RunCommand {
         Output.line()
         Output.line("run stopped.")
         exit(0)
+    }
+}
+
+/// Chrome refusing JavaScript from Apple Events is the one setup step users
+/// forget; without this it only shows up as tabs that never pause.
+@MainActor
+private func warnAboutBrowserScripting(_ controllers: [any MediaController], enabled: Set<MediaControllerID>) {
+    for case let browser as ChromeController in controllers where enabled.contains(browser.id) {
+        guard case .disabled = browser.javaScriptAccess() else { continue }
+        Output.error("WARNING: \(browser.displayName) will not be paused — \(browser.javaScriptDisabledHint)")
     }
 }
 

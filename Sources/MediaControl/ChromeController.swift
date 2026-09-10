@@ -48,14 +48,29 @@ public struct ChromeController: MediaController {
 
         switch ChromePauseResult(result) {
         case let .javaScriptDisabled(message):
-            let hint = "enable View → Developer → Allow JavaScript from Apple Events in \(displayName)"
-            chromeLogger.error("pause: \(message, privacy: .public) — \(hint, privacy: .public)")
+            chromeLogger.error("pause: \(message, privacy: .public) — \(self.javaScriptDisabledHint, privacy: .public)")
             return nil
         case let .paused(tabs):
             guard !tabs.isEmpty else { return nil }
             chromeLogger.debug("paused \(tabs.count, privacy: .public) tab(s)")
             return PauseReceipt(controller: id, items: tabs.map(\.item))
         }
+    }
+
+    /// The one setting users must switch on by hand, probed with a no-op script
+    /// in the first http(s) tab so the problem can be shown before the first
+    /// call instead of surfacing as a silent "nothing to pause".
+    @MainActor public func javaScriptAccess() -> ChromeJavaScriptAccess {
+        guard isRunning else { return .browserNotRunning }
+        do {
+            return ChromeJavaScriptAccess(try Scripts.probe(bundleID: bundleID).execute())
+        } catch {
+            return .failed(message: error.logMessage)
+        }
+    }
+
+    public var javaScriptDisabledHint: String {
+        "enable View → Developer → Allow JavaScript from Apple Events in \(displayName)"
     }
 
     /// Only the elements this controller marked are started again; a tab the
@@ -119,6 +134,31 @@ enum ChromePauseResult: Hashable {
     }
 }
 
+public enum ChromeJavaScriptAccess: Hashable, Sendable {
+    case available
+    case disabled(message: String)
+    case browserNotRunning
+    case noScriptableTab
+    case failed(message: String)
+
+    static let availableMarker = "OK"
+    static let noTabMarker = "NOTAB"
+
+    init(_ descriptor: NSAppleEventDescriptor) {
+        switch descriptor.stringValue {
+        case Self.availableMarker: self = .available
+        case Self.noTabMarker: self = .noScriptableTab
+        default:
+            let items = descriptor.stringItems
+            guard items.first == ChromePauseResult.errorMarker else {
+                self = .failed(message: "unexpected result \(items)")
+                return
+            }
+            self = .disabled(message: items.dropFirst().first ?? "unknown error")
+        }
+    }
+}
+
 extension NSAppleEventDescriptor {
     /// AppleScript lists are 1-based; a non-list descriptor reports no items.
     var stringItems: [String] {
@@ -168,6 +208,10 @@ private enum Scripts {
         AppleScript(resumeSource(bundleID: bundleID, tabs: tabs))
     }
 
+    static func probe(bundleID: String) -> AppleScript {
+        AppleScript(probeSource(bundleID: bundleID))
+    }
+
     /// Tabs whose URL is not http(s) — `chrome://`, extensions, blank pages —
     /// throw on `execute javascript` and are skipped before that happens.
     private static func pauseSource(bundleID: String) -> String {
@@ -192,6 +236,28 @@ private enum Scripts {
                 end repeat
             end repeat
             return hits
+        end tell
+        """
+    }
+
+    private static func probeSource(bundleID: String) -> String {
+        """
+        tell application id \(AppleScriptLiteral.string(bundleID))
+            repeat with winRef in every window
+                repeat with tabRef in every tab of winRef
+                    if (URL of tabRef) starts with "http" then
+                        try
+                            execute tabRef javascript "1"
+                            return \(AppleScriptLiteral.string(ChromeJavaScriptAccess.availableMarker))
+                        on error errMsg number errNum
+                            if errMsg contains \(AppleScriptLiteral.string(ChromePauseResult.javaScriptDisabledMessage)) then
+                                return {\(AppleScriptLiteral.string(ChromePauseResult.errorMarker)), errMsg}
+                            end if
+                        end try
+                    end if
+                end repeat
+            end repeat
+            return \(AppleScriptLiteral.string(ChromeJavaScriptAccess.noTabMarker))
         end tell
         """
     }
