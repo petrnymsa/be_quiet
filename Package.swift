@@ -10,6 +10,9 @@ let package = Package(
         .library(name: "MediaControl", targets: ["MediaControl"]),
         .library(name: "BeQuietCore", targets: ["BeQuietCore"]),
         .executable(name: "bequiet", targets: ["BeQuietCLI"]),
+        // Not "BeQuiet": product names differing only in case collide in the
+        // build directory on a case-insensitive filesystem.
+        .executable(name: "BeQuietApp", targets: ["BeQuiet"]),
     ],
     targets: [
         .target(
@@ -25,9 +28,17 @@ let package = Package(
             name: "BeQuietCLI",
             dependencies: ["BeQuietCore", "MediaControl", "MicMonitor"]
         ),
+        .executableTarget(
+            name: "BeQuiet",
+            dependencies: ["BeQuietCore", "MediaControl", "MicMonitor"]
+        ),
         .testTarget(
             name: "BeQuietCoreTests",
             dependencies: ["BeQuietCore"]
+        ),
+        .testTarget(
+            name: "BeQuietAppTests",
+            dependencies: ["BeQuiet"]
         ),
         .testTarget(
             name: "MediaControlTests",

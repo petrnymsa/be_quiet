@@ -35,6 +35,12 @@ public struct ChromeController: MediaController {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
+    /// Probes the browser, which compiles the scripts and triggers the
+    /// Automation prompt.
+    @MainActor public func prepare() async {
+        _ = javaScriptAccess()
+    }
+
     @MainActor public func pauseIfPlaying() async -> PauseReceipt? {
         guard isRunning else { return nil }
 

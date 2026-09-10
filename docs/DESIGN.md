@@ -30,15 +30,23 @@ Package.swift                 swift-tools-version 6.0, platforms: macOS 14
 Sources/
   MicMonitor/                 lib   CoreAudio only, no AppKit
   MediaControl/               lib   MediaController protocol + Spotify, Chrome
-  BeQuietCore/                lib   PauseCoordinator state machine, Settings
-  BeQuietCLI/                 exe   `bequiet` — Phase 1 spike, later a debug tool
-  BeQuiet/                    exe   menu bar app (NSStatusItem, SMAppService)
+  BeQuietCore/                lib   PauseStateMachine, PauseCoordinator, Settings
+  BeQuietCLI/                 exe   product `bequiet` — debug CLI (watch, run, controller)
+  BeQuiet/                    exe   product `BeQuietApp` — menu bar app
 Tests/
-  BeQuietCoreTests/           coordinator tests with fake clock / mic / controllers
-Makefile                      release build → BeQuiet.app bundle → ad-hoc codesign
+  BeQuietCoreTests/           state machine, coordinator, settings store
+  MediaControlTests/          AppleScript literal escaping, Chrome receipt parsing
+  BeQuietAppTests/            StatusPresentation mapping
+Packaging/Info.plist          bundle template (@VERSION@)
+Makefile                      app / install / dist (universal zip), ad-hoc codesign
 docs/DESIGN.md                this file
-README.md                     build, install, Chrome setup, known limitations
+README.md                     install, Chrome setup, menu, debugging, limitations
 ```
+
+The app product is `BeQuietApp`, not `BeQuiet`: product names that differ only
+in case (`bequiet` vs `BeQuiet`) share a build directory on a case-insensitive
+filesystem and overwrite each other's link inputs. The Makefile renames the
+binary to `BeQuiet` inside the bundle.
 
 Swift 6 language mode with strict concurrency. Bundle identifier
 `cz.nymsa.BeQuiet`; `os.Logger` subsystem `cz.nymsa.BeQuiet` with categories
@@ -282,6 +290,18 @@ Phase 1 deliverable and permanent debugging aid:
 Each phase ends with a manual test by the user before the next one starts.
 
 ## Follow-ups (post Phase 4)
+
+### Chrome extension instead of AppleScript
+
+*Allow JavaScript from Apple Events* cannot be switched on by an extension (it
+is a browser preference outside the extension API). An extension could replace
+the AppleScript path instead: `chrome.tabs.query({ audible: true })`, content
+scripts with `all_frames: true` (fixes the iframe limitation), no Automation
+prompt, same code for Brave/Edge/Arc, talking to BeQuiet over a localhost
+WebSocket. Judged overkill for now: two artefacts to install, Web Store or a
+permanent Developer-mode warning, a server and MV3 lifecycle in the app.
+Revisit only if the manual setting turns out to be a real support burden or
+iframe media matters. `MediaController` accommodates it without core changes.
 
 ### Distribution without a paid Apple Developer account
 

@@ -32,6 +32,12 @@ public struct SpotifyController: MediaController {
         return result.stringValue.flatMap(SpotifyPlayerState.init(rawValue:))
     }
 
+    /// Compiles the scripts and asks for the player state, which is what
+    /// triggers the Automation prompt.
+    @MainActor public func prepare() async {
+        _ = playerState()
+    }
+
     @MainActor public func pauseIfPlaying() async -> PauseReceipt? {
         guard playerState() == .playing, run(Scripts.pause) != nil else { return nil }
         return PauseReceipt(controller: id)
