@@ -110,9 +110,20 @@ Other requirements:
   `micActive(Bool, reason: String)` transitions and the raw device/process
   changes for logging.
 
-Open risk: virtual devices (Microsoft Teams Audio, BlackHole, Loopback) may
-report running permanently. If Phase 1 confirms this, add a per-device ignore
-list (by device UID) to settings.
+**Ignored processes.** Some processes hold the microphone without any call:
+the Android Emulator (`qemu-system-aarch64`, confirmed — it paused music on
+every emulator start), virtual machines, audio tools. Settings carry
+`ignoredProcesses`, a set of identity keys — the bundle ID, or the executable
+name (from `proc_pidpath`) for unbundled processes — and `MicMonitor` leaves
+those out of `activeProcesses`, so they never count towards activity while the
+snapshot still reports them as `ignoredActiveProcesses` for the UI. The menu's
+*Ignored apps* submenu lists whatever is using the microphone right now with a
+checkbox per process, so the fix for a new offender is one click. The Android
+Emulator is ignored by default.
+
+Virtual *devices* (Microsoft Teams Audio, BlackHole, Loopback) turned out not
+to matter: the process rule ignores devices altogether, so no device ignore
+list is needed.
 
 ## Media control (`MediaControl`)
 
