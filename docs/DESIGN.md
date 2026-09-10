@@ -18,8 +18,9 @@ AutoPause. Swift, SwiftPM, no external dependencies, macOS 14+.
 
 ## Non-goals (for now)
 
-- Apple Music, Safari, other browsers — the `MediaController` protocol keeps
-  them easy to add later.
+- Safari, other browsers — the `MediaController` protocol keeps them easy to
+  add later. (Apple Music was on this list until a colleague asked for it; see
+  Media control.)
 - Pausing media the user starts *during* a call.
 - Distribution signing / notarization. Ad-hoc signing only.
 
@@ -152,6 +153,12 @@ Spotify, `"windowID:tabID"` entries for Chrome). Keeping it a plain
 headers, awkward under SwiftPM). Guard with `NSRunningApplication` first:
 `tell application "Spotify"` would launch it. `player state` → `pause`;
 resume only if the state is still `paused`.
+
+**Apple Music** — the desktop Music.app exposes the same scripting surface as
+Spotify (`player state`, `pause`, `play`; bundle ID `com.apple.Music`), so both
+are one `ScriptablePlayerController` parameterised by bundle ID, display name
+and controller ID. Its `player state` also knows `fast forwarding` and
+`rewinding`; only `playing` is paused.
 
 **Chrome** — the AppleScript dictionary has no `audible` property, so one
 script iterates every window/tab and runs
