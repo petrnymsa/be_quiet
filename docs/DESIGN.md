@@ -243,6 +243,12 @@ Presets exposed in menu submenus: debounce 0.5 / 1 / 2 / 3 / 5 s, resume delay
   resumes anything held before terminating.
 - At launch every enabled controller's `prepare()` runs, so Automation
   prompts for Spotify and Chrome show up immediately.
+- Icons come from the designer's SVGs in `Packaging/Icons/`. The app icon
+  (`AppIcon.svg`, 1024 squircle) is rasterised to `BeQuiet.icns` at build time
+  by `Packaging/make-icons.swift` using AppKit only. The menu bar glyph
+  (headphones + pause, 18 pt template) is built in code (`MenuBarIcon`) from
+  the same SVG shapes, so its three states — pause bars present, faded, absent —
+  need neither extra assets nor an SPM resource bundle.
 - SwiftPM cannot produce `.app` bundles; the `Makefile` assembles
   `dist/BeQuiet.app` (binary, `Info.plist` with `LSUIElement`,
   `NSAppleEventsUsageDescription`, bundle ID, version) and signs it ad-hoc

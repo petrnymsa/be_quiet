@@ -45,10 +45,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func refreshStatusItem() {
         let presentation = self.presentation
         guard let button = statusItem.button else { return }
-        button.image = NSImage(
-            systemSymbolName: presentation.symbolName,
-            accessibilityDescription: presentation.tooltip
-        )
+        button.image = presentation.icon.image
+        button.appearsDisabled = presentation.isDimmed
         button.toolTip = presentation.tooltip
     }
 

@@ -6,7 +6,7 @@ import Testing
 
 @Suite("StatusPresentation")
 struct StatusPresentationTests {
-    @Test("disabled wins over every phase")
+    @Test("disabled wins over every phase and dims the listening glyph")
     func disabled() {
         for phase in [PausePhase.idle, .arming, .pausing, .paused, .resumePending] {
             let presentation = StatusPresentation(
@@ -15,7 +15,8 @@ struct StatusPresentationTests {
                 pausedControllerNames: ["Spotify"],
                 micProcessNames: ["Microsoft Teams"]
             )
-            #expect(presentation.symbolName == "speaker.slash")
+            #expect(presentation.icon == .listening)
+            #expect(presentation.isDimmed)
             #expect(presentation.tooltip == "BeQuiet — disabled")
             #expect(presentation.statusText == "Disabled")
         }
@@ -24,7 +25,8 @@ struct StatusPresentationTests {
     @Test("idle")
     func idle() {
         let presentation = StatusPresentation(isEnabled: true, phase: .idle)
-        #expect(presentation.symbolName == "speaker.wave.2")
+        #expect(presentation.icon == .listening)
+        #expect(!presentation.isDimmed)
         #expect(presentation.tooltip == "BeQuiet — idle")
         #expect(presentation.statusText == "Idle")
     }
@@ -36,7 +38,7 @@ struct StatusPresentationTests {
             phase: .arming,
             micProcessNames: ["Microsoft Teams", "Google Chrome"]
         )
-        #expect(presentation.symbolName == "mic")
+        #expect(presentation.icon == .armed)
         #expect(presentation.tooltip == "BeQuiet — microphone active")
         #expect(presentation.statusText == "Microphone in use by Microsoft Teams, Google Chrome")
     }
@@ -55,7 +57,7 @@ struct StatusPresentationTests {
                 phase: phase,
                 pausedControllerNames: ["Spotify", "Google Chrome"]
             )
-            #expect(presentation.symbolName == "pause.circle.fill")
+            #expect(presentation.icon == .paused)
             #expect(presentation.tooltip == "BeQuiet — paused: Spotify, Google Chrome")
             #expect(presentation.statusText == "Paused: Spotify, Google Chrome")
         }
@@ -64,32 +66,31 @@ struct StatusPresentationTests {
     @Test("paused while nothing was playing")
     func pausedWithoutReceipts() {
         let presentation = StatusPresentation(isEnabled: true, phase: .paused)
-        #expect(presentation.symbolName == "pause.circle.fill")
+        #expect(presentation.icon == .paused)
         #expect(presentation.tooltip == "BeQuiet — nothing to pause")
         #expect(presentation.statusText == "Nothing to pause")
     }
 
-    @Test("resume pending")
+    @Test("resume pending shows the armed glyph")
     func resumePending() {
         let presentation = StatusPresentation(
             isEnabled: true,
             phase: .resumePending,
             pausedControllerNames: ["Spotify"]
         )
-        #expect(presentation.symbolName == "pause.circle")
+        #expect(presentation.icon == .armed)
         #expect(presentation.tooltip == "BeQuiet — resuming shortly")
         #expect(presentation.statusText == "Resuming shortly…")
     }
 
-    @Test("every symbol the status item can show exists")
+    @Test("every glyph renders as an 18 pt template image")
     @MainActor
-    func symbolsExist() {
-        var names = [StatusPresentation(isEnabled: false, phase: .idle).symbolName]
-        names += [PausePhase.idle, .arming, .pausing, .paused, .resumePending].map {
-            StatusPresentation(isEnabled: true, phase: $0).symbolName
-        }
-        for name in names {
-            #expect(NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil, "\(name) is missing")
+    func iconsRender() {
+        for icon in MenuBarIcon.allCases {
+            let image = icon.image
+            #expect(image.isTemplate, "\(icon) is not a template image")
+            #expect(image.size == NSSize(width: 18, height: 18), "\(icon) has size \(image.size)")
+            #expect(!image.representations.isEmpty, "\(icon) has no representation")
         }
     }
 

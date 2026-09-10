@@ -10,6 +10,8 @@
 	<string>BeQuiet</string>
 	<key>CFBundleExecutable</key>
 	<string>BeQuiet</string>
+	<key>CFBundleIconFile</key>
+	<string>BeQuiet</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleInfoDictionaryVersion</key>

@@ -5,7 +5,9 @@ import Foundation
 /// coordinator state alone. A value type with no AppKit in sight, so the whole
 /// mapping is unit tested.
 struct StatusPresentation: Hashable {
-    let symbolName: String
+    let icon: MenuBarIcon
+    /// Disabled is not a fourth glyph but the listening glyph drawn dimmed.
+    let isDimmed: Bool
     let tooltip: String
     let statusText: String
 
@@ -21,27 +23,29 @@ struct StatusPresentation: Hashable {
         micProcessNames: [String] = []
     ) {
         guard isEnabled else {
-            symbolName = "speaker.slash"
+            icon = .listening
+            isDimmed = true
             tooltip = "BeQuiet — disabled"
             statusText = "Disabled"
             return
         }
+        isDimmed = false
 
         switch phase {
         case .idle:
-            symbolName = "speaker.wave.2"
+            icon = .listening
             tooltip = "BeQuiet — idle"
             statusText = "Idle"
 
         case .arming:
-            symbolName = "mic"
+            icon = .armed
             tooltip = "BeQuiet — microphone active"
             statusText = micProcessNames.isEmpty
                 ? "Microphone active"
                 : "Microphone in use by \(micProcessNames.list)"
 
         case .pausing, .paused:
-            symbolName = "pause.circle.fill"
+            icon = .paused
             // Nothing was playing when the call started: the phase is still
             // `paused` but there is nothing to name.
             if pausedControllerNames.isEmpty {
@@ -53,7 +57,7 @@ struct StatusPresentation: Hashable {
             }
 
         case .resumePending:
-            symbolName = "pause.circle"
+            icon = .armed
             tooltip = "BeQuiet — resuming shortly"
             statusText = "Resuming shortly…"
         }
