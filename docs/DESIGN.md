@@ -200,8 +200,11 @@ Rules:
 | `enabled`                | Bool   | true    |
 | `debounceSeconds`        | Double | 2       |
 | `resumeDelaySeconds`     | Double | 3       |
-| `controller.spotify`     | Bool   | true    |
-| `controller.chrome`      | Bool   | true    |
+| `controller.<id>`        | Bool   | true    |
+
+`<id>` is the controller's raw ID: `spotify`, `chrome:com.google.Chrome`
+(Chromium-family controllers carry their bundle ID so several browsers can
+coexist).
 
 Presets exposed in menu submenus: debounce 0.5 / 1 / 2 / 3 / 5 s, resume delay
 1 / 2 / 3 / 5 / 10 s. No settings window.

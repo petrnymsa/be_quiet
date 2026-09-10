@@ -5,13 +5,13 @@ public struct Settings: Hashable, Sendable {
     public var isEnabled = true
     public var debounceSeconds: TimeInterval = 2
     public var resumeDelaySeconds: TimeInterval = 3
-    public var enabledControllers: Set<MediaControllerID> = [.spotify]
+    public var enabledControllers: Set<MediaControllerID> = [.spotify, .chrome]
 
     public init(
         isEnabled: Bool = true,
         debounceSeconds: TimeInterval = 2,
         resumeDelaySeconds: TimeInterval = 3,
-        enabledControllers: Set<MediaControllerID> = [.spotify]
+        enabledControllers: Set<MediaControllerID> = [.spotify, .chrome]
     ) {
         self.isEnabled = isEnabled
         self.debounceSeconds = debounceSeconds
@@ -26,7 +26,7 @@ public struct Settings: Hashable, Sendable {
 /// `@unchecked Sendable` because `UserDefaults` is thread-safe but not marked so.
 public final class SettingsStore: @unchecked Sendable {
     /// Controllers BeQuiet knows about; every one of them is on by default.
-    private static let knownControllers: [MediaControllerID] = [.spotify]
+    private static let knownControllers: [MediaControllerID] = [.spotify, .chrome]
 
     private enum Key {
         static let enabled = "enabled"

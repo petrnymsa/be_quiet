@@ -29,5 +29,9 @@ let package = Package(
             name: "BeQuietCoreTests",
             dependencies: ["BeQuietCore"]
         ),
+        .testTarget(
+            name: "MediaControlTests",
+            dependencies: ["MediaControl"]
+        ),
     ]
 )

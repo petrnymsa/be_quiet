@@ -14,6 +14,7 @@ struct SettingsStoreTests {
 
         let store = SettingsStore(defaults: defaults)
         #expect(store.load() == Settings())
+        #expect(store.load().enabledControllers == [.spotify, .chrome])
 
         let settings = Settings(
             isEnabled: false,
@@ -28,5 +29,6 @@ struct SettingsStoreTests {
         #expect(defaults.object(forKey: "debounceSeconds") as? Double == 0.5)
         #expect(defaults.object(forKey: "resumeDelaySeconds") as? Double == 10)
         #expect(defaults.object(forKey: "controller.spotify") as? Bool == false)
+        #expect(defaults.object(forKey: "controller.chrome:com.google.Chrome") as? Bool == false)
     }
 }

@@ -19,7 +19,7 @@ enum RunCommand {
 
         let log = TransitionLog()
         let coordinator = PauseCoordinator(
-            controllers: [SpotifyController()],
+            controllers: [SpotifyController(), ChromeController()],
             settings: settings,
             onTransition: { from, to in log.record(from, to) }
         )

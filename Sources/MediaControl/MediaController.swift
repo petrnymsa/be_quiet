@@ -8,6 +8,14 @@ public struct MediaControllerID: RawRepresentable, Hashable, Sendable, CustomStr
     public var description: String { rawValue }
 
     public static let spotify = MediaControllerID(rawValue: "spotify")
+
+    /// Chromium-family browsers all share one scripting dictionary, so the
+    /// bundle ID is part of the identity.
+    public static func chrome(bundleID: String) -> MediaControllerID {
+        MediaControllerID(rawValue: "chrome:\(bundleID)")
+    }
+
+    public static let chrome = MediaControllerID.chrome(bundleID: "com.google.Chrome")
 }
 
 /// Describes what a controller paused so that exactly that can be resumed.

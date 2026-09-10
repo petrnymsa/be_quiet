@@ -72,3 +72,24 @@ private extension NSDictionary {
         self[NSAppleScript.errorNumber] as? Int ?? 0
     }
 }
+
+/// AppleScript string literals cannot span lines and know only backslash
+/// escapes, so anything spliced into a script source — the JavaScript that
+/// drives the browser above all — has to be encoded first.
+enum AppleScriptLiteral {
+    static func string(_ value: String) -> String {
+        var escaped = ""
+        escaped.reserveCapacity(value.count + 2)
+        for character in value {
+            switch character {
+            case "\\": escaped += #"\\"#
+            case "\"": escaped += #"\""#
+            case "\n": escaped += #"\n"#
+            case "\r": escaped += #"\r"#
+            case "\t": escaped += #"\t"#
+            default: escaped.append(character)
+            }
+        }
+        return "\"\(escaped)\""
+    }
+}

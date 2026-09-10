@@ -38,10 +38,12 @@ struct BeQuietCLI {
             --resume-delay <s>      Wait after the microphone goes idle before
                                     resuming (default from settings, 3 s).
 
-          bequiet controller spotify
+          bequiet controller <spotify|chrome>
                                     Check one controller by hand: print its state,
                                     pause it, wait 3 s, resume it. Triggers the
-                                    Automation permission prompt.
+                                    Automation permission prompt. `chrome` also
+                                    needs View → Developer → Allow JavaScript
+                                    from Apple Events in Chrome.
 
           bequiet --help            Show this message.
         """
