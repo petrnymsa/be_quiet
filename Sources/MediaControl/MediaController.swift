@@ -8,6 +8,7 @@ public struct MediaControllerID: RawRepresentable, Hashable, Sendable, CustomStr
     public var description: String { rawValue }
 
     public static let spotify = MediaControllerID(rawValue: "spotify")
+    public static let appleMusic = MediaControllerID(rawValue: "appleMusic")
 
     /// Chromium-family browsers all share one scripting dictionary, so the
     /// bundle ID is part of the identity.

@@ -21,7 +21,11 @@ enum RunCommand {
         let events = monitor.start()
         let interrupts = Interrupts.install { monitor.stop() }
 
-        let controllers: [any MediaController] = [SpotifyController(), ChromeController()]
+        let controllers: [any MediaController] = [
+            ScriptablePlayerController.spotify,
+            ScriptablePlayerController.appleMusic,
+            ChromeController(),
+        ]
         let log = TransitionLog()
         let coordinator = PauseCoordinator(
             controllers: controllers,

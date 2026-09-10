@@ -19,7 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         let store = SettingsStore()
-        let controllers: [any MediaController] = [SpotifyController(), ChromeController()]
+        let controllers: [any MediaController] = [
+            ScriptablePlayerController.spotify,
+            ScriptablePlayerController.appleMusic,
+            ChromeController(),
+        ]
         let settings = store.load()
         self.store = store
         self.controllers = controllers

@@ -11,7 +11,8 @@ Swift, no external dependencies.
 
 ## What it does
 
-- Pauses Spotify and playing media in Google Chrome tabs when a call starts.
+- Pauses Spotify, Apple Music and playing media in Google Chrome tabs when a
+  call starts.
 - Resumes exactly what it paused itself, once the microphone has been idle for
   a few seconds.
 - Ignores short microphone bursts (dictation, Siri) through a debounce delay.
@@ -54,11 +55,11 @@ open /Applications/BeQuiet.app
 ad-hoc and copies it to `/Applications`. BeQuiet then sits in the menu bar; it
 has no Dock icon and no main window.
 
-On the first launch macOS asks twice for permission to control Spotify and
-Google Chrome. BeQuiet warms both controllers up at startup precisely so the
-prompts appear right away instead of in the middle of a call. Both have to be
-allowed; the answers can be changed later under System Settings → Privacy &
-Security → Automation.
+On the first launch macOS asks for permission to control Spotify, Music and
+Google Chrome — one prompt per application that is running at the time. BeQuiet
+warms the controllers up at startup precisely so the prompts appear right away
+instead of in the middle of a call. They have to be allowed; the answers can be
+changed later under System Settings → Privacy & Security → Automation.
 
 The signature is ad-hoc (there is no paid Developer account), and its identity
 changes with every rebuild, so macOS treats each rebuild as a new application
@@ -105,6 +106,7 @@ The icon is a template image, so it follows the light and dark menu bar.
 | first line | current state: `Idle`, `Microphone in use by Microsoft Teams`, `Paused: Spotify, Google Chrome`, `Resuming shortly…`, `Disabled` |
 | `Enabled` | master switch; switching it off resumes anything BeQuiet holds |
 | `Pause Spotify` | whether Spotify is paused during calls |
+| `Pause Apple Music` | whether the Music app is paused during calls |
 | `Pause Google Chrome` | whether playing Chrome tabs are paused during calls |
 | `⚠︎ Allow JavaScript from Apple Events is off …` | shown while Chrome refuses scripting; see *Chrome setup* |
 | `Ignored apps ▸` | applications whose microphone use is not a call: everything holding the microphone right now, ticked when ignored, plus the entries that are ignored but not running |
@@ -171,6 +173,7 @@ defaults write cz.nymsa.BeQuiet ignoredProcesses -array qemu-system-aarch64 com.
 | `debounceSeconds` | Double | `2` |
 | `resumeDelaySeconds` | Double | `3` |
 | `controller.spotify` | Bool | `true` |
+| `controller.appleMusic` | Bool | `true` |
 | `controller.chrome:com.google.Chrome` | Bool | `true` |
 | `ignoredProcesses` | [String] | `qemu-system-aarch64`, `qemu-system-x86_64` and their `-headless` variants |
 
@@ -190,6 +193,7 @@ The `bequiet` CLI is the debugging aid for the same pipeline:
 swift run bequiet watch                 # microphone snapshot + every change
 swift run bequiet run                   # the full pipeline with a log line per transition
 swift run bequiet controller spotify    # pause and resume one controller by hand
+swift run bequiet controller music
 swift run bequiet controller chrome
 ```
 
@@ -204,7 +208,7 @@ Both the app and the CLI log to the unified log:
 log stream --predicate 'subsystem == "cz.nymsa.BeQuiet"' --level debug
 ```
 
-Categories are `mic`, `coordinator`, `spotify`, `chrome` and `app`.
+Categories are `mic`, `coordinator`, `player`, `chrome` and `app`.
 
 ## Known limitations
 
@@ -240,7 +244,7 @@ make clean
 ```
 Sources/
   MicMonitor/     CoreAudio microphone detection, no AppKit
-  MediaControl/   MediaController protocol, Spotify and Chromium controllers
+  MediaControl/   MediaController protocol, scriptable players (Spotify, Apple Music), Chromium browsers
   BeQuietCore/    PauseStateMachine, PauseCoordinator, Settings
   BeQuietCLI/     `bequiet` — the debugging CLI
   BeQuiet/        the menu bar app (status item, menu, icon, launch at login)

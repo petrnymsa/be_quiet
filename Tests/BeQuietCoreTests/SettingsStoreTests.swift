@@ -14,7 +14,7 @@ struct SettingsStoreTests {
 
         let store = SettingsStore(defaults: defaults)
         #expect(store.load() == Settings())
-        #expect(store.load().enabledControllers == [.spotify, .chrome])
+        #expect(store.load().enabledControllers == [.spotify, .appleMusic, .chrome])
         #expect(store.load().ignoredProcesses == Settings.defaultIgnoredProcesses)
 
         let settings = Settings(

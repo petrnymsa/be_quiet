@@ -7,7 +7,8 @@ import MediaControl
 enum ControllerCommand {
     @MainActor
     private static let controllers: [String: any InspectableController] = [
-        "spotify": SpotifyController(),
+        "spotify": ScriptablePlayerController.spotify,
+        "music": ScriptablePlayerController.appleMusic,
         "chrome": ChromeController(),
     ]
 
@@ -57,8 +58,8 @@ enum ControllerCommand {
     }
 }
 
-/// `isRunning` and Spotify's player state are worth printing but are no business
-/// of `MediaController`; this keeps the command generic without widening the
+/// `isRunning` and a player's state are worth printing but are no business of
+/// `MediaController`; this keeps the command generic without widening the
 /// protocol every controller has to satisfy.
 private protocol InspectableController: MediaController {
     @MainActor var isRunning: Bool { get }
@@ -67,7 +68,7 @@ private protocol InspectableController: MediaController {
     @MainActor var stateDescription: String? { get }
 }
 
-extension SpotifyController: InspectableController {
+extension ScriptablePlayerController: InspectableController {
     var stateDescription: String? { playerState()?.description ?? "unknown" }
 }
 
