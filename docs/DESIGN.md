@@ -118,6 +118,9 @@ public protocol MediaController: Sendable {
     /// Resumes only the items described by the receipt, and only if they are
     /// still paused. Missing tabs / quit apps are ignored.
     func resume(_ receipt: PauseReceipt) async
+    /// Startup warm-up: compiles scripts and reads state so the first pause is
+    /// fast and the Automation prompts appear at launch, not mid-call.
+    func prepare() async
 }
 ```
 
@@ -139,6 +142,16 @@ Requires *View → Developer → Allow JavaScript from Apple Events* in Chrome
 (documented in README). Tabs with non-http URLs throw and are skipped. The
 controller is parameterised by bundle ID so Brave/Arc/Edge (same dictionary)
 can be enabled later; only Chrome ships enabled.
+
+Paused elements are marked (`data-bequiet-paused`) so resume starts exactly
+those and leaves media the user paused by hand in the same tab alone.
+
+A disabled *Allow JavaScript from Apple Events* was the first real-world trap:
+Chrome answers every `execute javascript` with an error and the controller
+correctly reports "nothing to pause", which is indistinguishable from silence.
+`ChromeController.javaScriptAccess()` probes the setting with a no-op script;
+the CLI prints the result (`controller chrome`, startup warning in `run`) and
+the menu bar app shows a warning item under the Chrome checkbox.
 
 Known limitation: `play()` from an Apple Event may be blocked by Chrome's
 autoplay policy on pages without prior user activation. Documented, not
@@ -211,10 +224,17 @@ Presets exposed in menu submenus: debounce 0.5 / 1 / 2 / 3 / 5 s, resume delay
 
 ## App shell (`BeQuiet`)
 
-- `NSStatusItem` with an SF Symbol reflecting coordinator state: idle,
-  mic active (arming), paused.
-- Menu: Enabled toggle, controller checkboxes, Debounce ▸ presets,
-  Resume delay ▸ presets, Launch at Login (`SMAppService.mainApp`), Quit.
+- `NSStatusItem` with an SF Symbol reflecting coordinator state: disabled,
+  idle, mic active (arming), paused, resume pending. The mapping lives in a
+  pure `StatusPresentation` value so it can be unit tested.
+- Menu: status line (including which application holds the microphone,
+  resolved from the process snapshot), Enabled toggle, controller checkboxes
+  (with a warning item when Chrome refuses JavaScript from Apple Events),
+  Debounce ▸ presets, Resume delay ▸ presets, Launch at Login
+  (`SMAppService.mainApp`, disabled outside an `.app` bundle), Quit. Quit
+  resumes anything held before terminating.
+- At launch every enabled controller's `prepare()` runs, so Automation
+  prompts for Spotify and Chrome show up immediately.
 - SwiftPM cannot produce `.app` bundles; the `Makefile` assembles
   `dist/BeQuiet.app` (binary, `Info.plist` with `LSUIElement`,
   `NSAppleEventsUsageDescription`, bundle ID, version) and signs it ad-hoc
