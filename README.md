@@ -11,8 +11,8 @@ Swift, no external dependencies.
 
 ## What it does
 
-- Pauses Spotify, Apple Music and playing media in Google Chrome tabs when a
-  call starts.
+- Pauses Spotify, Apple Music and playing media in Google Chrome and Safari
+  tabs when a call starts.
 - Resumes exactly what it paused itself, once the microphone has been idle for
   a few seconds.
 - Ignores short microphone bursts (dictation, Siri) through a debounce delay.
@@ -55,11 +55,12 @@ open /Applications/BeQuiet.app
 ad-hoc and copies it to `/Applications`. BeQuiet then sits in the menu bar; it
 has no Dock icon and no main window.
 
-On the first launch macOS asks for permission to control Spotify, Music and
-Google Chrome — one prompt per application that is running at the time. BeQuiet
-warms the controllers up at startup precisely so the prompts appear right away
-instead of in the middle of a call. They have to be allowed; the answers can be
-changed later under System Settings → Privacy & Security → Automation.
+On the first launch macOS asks for permission to control Spotify, Music, Google
+Chrome and Safari — one prompt per application that is running at the time.
+BeQuiet warms the controllers up at startup precisely so the prompts appear
+right away instead of in the middle of a call. They have to be allowed; the
+answers can be changed later under System Settings → Privacy & Security →
+Automation.
 
 The signature is ad-hoc (there is no paid Developer account), and its identity
 changes with every rebuild, so macOS treats each rebuild as a new application
@@ -69,23 +70,30 @@ and asks again. To clean up the accumulated answers:
 tccutil reset AppleEvents cz.nymsa.BeQuiet
 ```
 
-## Chrome setup
+## Browser setup
 
-Chrome exposes no "is this tab playing audio" property to AppleScript, so
-BeQuiet asks each tab through `execute javascript`. That requires one setting
-inside Chrome:
+Neither browser exposes an "is this tab playing audio" property to AppleScript,
+so BeQuiet asks every tab through JavaScript. That takes one setting per
+browser:
 
-- **View → Developer → Allow JavaScript from Apple Events**
+- **Google Chrome**
+  - *View → Developer → Allow JavaScript from Apple Events*
+- **Safari**
+  - *Settings → Advanced → Show features for web developers*, which adds the
+    Develop menu
+  - *Develop → Allow JavaScript from Apple Events*
 
-The menu item is a per-profile setting, so it has to be switched on in every
-Chrome profile whose tabs should be paused. Without it Chrome refuses every
-script with *"Executing JavaScript through AppleScript is turned off"*; BeQuiet
-shows a warning under the *Pause Google Chrome* menu item and pauses nothing.
+In Chrome the menu item is a per-profile setting, so it has to be switched on
+in every profile whose tabs should be paused. Without the setting the browser
+refuses every script — Chrome with *"Executing JavaScript through AppleScript
+is turned off"*, Safari with *"You must enable 'Allow JavaScript from Apple
+Events' in the Developer section of Safari Settings"* — and BeQuiet shows a
+warning under the browser's own menu item and pauses nothing.
 
-The first time BeQuiet sends an Apple Event to Chrome, macOS shows the one-time
-Automation prompt described above. When the CLI is used from a terminal, the
-prompt names the terminal application rather than BeQuiet, because that is the
-process sending the event.
+The first time BeQuiet sends an Apple Event to a browser, macOS shows the
+one-time Automation prompt described above. When the CLI is used from a
+terminal, the prompt names the terminal application rather than BeQuiet, because
+that is the process sending the event.
 
 ## User guide
 
@@ -108,7 +116,8 @@ The icon is a template image, so it follows the light and dark menu bar.
 | `Pause Spotify` | whether Spotify is paused during calls |
 | `Pause Apple Music` | whether the Music app is paused during calls |
 | `Pause Google Chrome` | whether playing Chrome tabs are paused during calls |
-| `⚠︎ Allow JavaScript from Apple Events is off …` | shown while Chrome refuses scripting; see *Chrome setup* |
+| `Pause Safari` | whether playing Safari tabs are paused during calls |
+| `⚠︎ Allow JavaScript from Apple Events is off …` | shown while a browser refuses scripting; see *Browser setup* |
 | `Ignored apps ▸` | applications whose microphone use is not a call: everything holding the microphone right now, ticked when ignored, plus the entries that are ignored but not running |
 | `Debounce ▸` | how long the microphone must stay active before media is paused (0.5–5 s) |
 | `Resume delay ▸` | how long the microphone must stay idle before media is resumed (1–10 s) |
@@ -175,6 +184,7 @@ defaults write cz.nymsa.BeQuiet ignoredProcesses -array qemu-system-aarch64 com.
 | `controller.spotify` | Bool | `true` |
 | `controller.appleMusic` | Bool | `true` |
 | `controller.chrome:com.google.Chrome` | Bool | `true` |
+| `controller.safari` | Bool | `true` |
 | `ignoredProcesses` | [String] | `qemu-system-aarch64`, `qemu-system-x86_64` and their `-headless` variants |
 
 BeQuiet reads the settings at startup, so it has to be restarted afterwards. A
@@ -195,6 +205,7 @@ swift run bequiet run                   # the full pipeline with a log line per 
 swift run bequiet controller spotify    # pause and resume one controller by hand
 swift run bequiet controller music
 swift run bequiet controller chrome
+swift run bequiet controller safari
 ```
 
 `watch` and `run` take `--ignore <bundle ID or executable name>`, repeatable,
@@ -208,19 +219,22 @@ Both the app and the CLI log to the unified log:
 log stream --predicate 'subsystem == "cz.nymsa.BeQuiet"' --level debug
 ```
 
-Categories are `mic`, `coordinator`, `player`, `chrome` and `app`.
+Categories are `mic`, `coordinator`, `player`, `browser` and `app`.
 
 ## Known limitations
 
-- **Media inside cross-origin iframes is invisible.** `execute javascript` runs
-  in the top document only, so embedded players (a YouTube or Spotify embed on
-  a third-party page, most ad players) are neither found nor paused.
-- **Resuming can be refused by the autoplay policy.** `play()` from an Apple
-  Event has no user activation behind it, so Chrome may reject it on pages the
-  user has not interacted with. Nothing is broken, the tab simply stays paused.
-- **Only Chrome is enabled.** Brave, Arc, Microsoft Edge and Chromium share
-  Chrome's scripting dictionary, and `ChromeController(bundleID:)` accepts any
-  of their bundle IDs, but there is no user interface for adding them yet.
+- **Media inside cross-origin iframes is invisible.** The script runs in the
+  top document only, so embedded players (a YouTube or Spotify embed on a
+  third-party page, most ad players) are neither found nor paused.
+- **Resuming can be refused by the browser's autoplay policy.** `play()` from
+  an Apple Event has no user activation behind it, so the browser may reject it
+  on pages the user has not interacted with. Nothing is broken, the tab simply
+  stays paused.
+- **Only Chrome and Safari are enabled.** Brave, Arc, Microsoft Edge and
+  Chromium share Chrome's scripting dictionary, and Chromium-based browsers
+  other than Chrome can be added with
+  `BrowserController(bundleID:dialect:)`, but there is no user interface for
+  adding them yet.
 - **Media started during a call is left alone**, by design: while the
   microphone is active nothing is scanned or paused.
 - **Gatekeeper stops a downloaded build.** The zip from `make dist` carries no
@@ -233,7 +247,7 @@ Categories are `mic`, `coordinator`, `player`, `chrome` and `app`.
 
 ```sh
 swift build          # everything, debug
-swift test           # coordinator, settings, snapshot rules, Chrome scripting, presentation
+swift test           # coordinator, settings, snapshot rules, browser scripting, presentation
 make app             # dist/BeQuiet.app, current architecture, ad-hoc signed
 make install         # the same, copied to /Applications
 make dist            # universal (arm64 + x86_64) dist/BeQuiet-<version>.zip
@@ -244,7 +258,7 @@ make clean
 ```
 Sources/
   MicMonitor/     CoreAudio microphone detection, no AppKit
-  MediaControl/   MediaController protocol, scriptable players (Spotify, Apple Music), Chromium browsers
+  MediaControl/   MediaController protocol, players (Spotify, Apple Music), browsers (Chromium, Safari)
   BeQuietCore/    PauseStateMachine, PauseCoordinator, Settings
   BeQuietCLI/     `bequiet` — the debugging CLI
   BeQuiet/        the menu bar app (status item, menu, icon, launch at login)

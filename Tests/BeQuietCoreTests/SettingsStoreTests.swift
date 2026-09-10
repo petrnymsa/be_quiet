@@ -14,7 +14,7 @@ struct SettingsStoreTests {
 
         let store = SettingsStore(defaults: defaults)
         #expect(store.load() == Settings())
-        #expect(store.load().enabledControllers == [.spotify, .appleMusic, .chrome])
+        #expect(store.load().enabledControllers == [.spotify, .appleMusic, .chrome, .safari])
         #expect(store.load().ignoredProcesses == Settings.defaultIgnoredProcesses)
 
         let settings = Settings(
@@ -32,6 +32,7 @@ struct SettingsStoreTests {
         #expect(defaults.object(forKey: "resumeDelaySeconds") as? Double == 10)
         #expect(defaults.object(forKey: "controller.spotify") as? Bool == false)
         #expect(defaults.object(forKey: "controller.chrome:com.google.Chrome") as? Bool == false)
+        #expect(defaults.object(forKey: "controller.safari") as? Bool == false)
         #expect(defaults.object(forKey: "ignoredProcesses") as? [String] == ["com.utmapp.UTM"])
     }
 

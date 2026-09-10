@@ -30,7 +30,8 @@ AutoPause. Swift, SwiftPM, no external dependencies, macOS 14+.
 Package.swift                 swift-tools-version 6.0, platforms: macOS 14
 Sources/
   MicMonitor/                 lib   CoreAudio only, no AppKit
-  MediaControl/               lib   MediaController protocol + Spotify, Chrome
+  MediaControl/               lib   MediaController protocol, ScriptablePlayerController
+                                    (Spotify, Apple Music), BrowserController (Chromium, Safari)
   BeQuietCore/                lib   PauseStateMachine, PauseCoordinator, Settings
   BeQuietCLI/                 exe   product `bequiet` — debug CLI (watch, run, controller)
   BeQuiet/                    exe   product `BeQuietApp` — menu bar app
@@ -51,7 +52,7 @@ binary to `BeQuiet` inside the bundle.
 
 Swift 6 language mode with strict concurrency. Bundle identifier
 `cz.nymsa.BeQuiet`; `os.Logger` subsystem `cz.nymsa.BeQuiet` with categories
-`mic`, `coordinator`, `spotify`, `chrome`, `app`.
+`mic`, `coordinator`, `player`, `browser`, `app`.
 
 ## Microphone detection (`MicMonitor`)
 

@@ -9,7 +9,8 @@ enum ControllerCommand {
     private static let controllers: [String: any InspectableController] = [
         "spotify": ScriptablePlayerController.spotify,
         "music": ScriptablePlayerController.appleMusic,
-        "chrome": ChromeController(),
+        "chrome": BrowserController.chrome,
+        "safari": BrowserController.safari,
     ]
 
     @MainActor
@@ -72,7 +73,7 @@ extension ScriptablePlayerController: InspectableController {
     var stateDescription: String? { playerState()?.description ?? "unknown" }
 }
 
-extension ChromeController: InspectableController {
+extension BrowserController: InspectableController {
     var stateDescription: String? {
         switch javaScriptAccess() {
         case .available: "JavaScript from Apple Events enabled"

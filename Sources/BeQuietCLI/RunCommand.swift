@@ -24,7 +24,8 @@ enum RunCommand {
         let controllers: [any MediaController] = [
             ScriptablePlayerController.spotify,
             ScriptablePlayerController.appleMusic,
-            ChromeController(),
+            BrowserController.chrome,
+            BrowserController.safari,
         ]
         let log = TransitionLog()
         let coordinator = PauseCoordinator(
@@ -64,11 +65,11 @@ enum RunCommand {
     }
 }
 
-/// Chrome refusing JavaScript from Apple Events is the one setup step users
+/// A browser refusing JavaScript from Apple Events is the one setup step users
 /// forget; without this it only shows up as tabs that never pause.
 @MainActor
 private func warnAboutBrowserScripting(_ controllers: [any MediaController], enabled: Set<MediaControllerID>) {
-    for case let browser as ChromeController in controllers where enabled.contains(browser.id) {
+    for case let browser as BrowserController in controllers where enabled.contains(browser.id) {
         guard case .disabled = browser.javaScriptAccess() else { continue }
         Output.error("WARNING: \(browser.displayName) will not be paused — \(browser.javaScriptDisabledHint)")
     }

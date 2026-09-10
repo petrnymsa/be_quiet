@@ -37,7 +37,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         super.init()
 
         // Enablement is decided here, not by target/action validation: the
-        // status line and the Chrome warning are deliberately dead items.
+        // status line and the browser warning are deliberately dead items.
         menu.autoenablesItems = false
         menu.delegate = self
         statusItem.menu = menu
@@ -139,12 +139,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(quit)
     }
 
-    /// Chrome refusing JavaScript from Apple Events is the setup step users
+    /// A browser refusing JavaScript from Apple Events is the setup step users
     /// forget; without this it only shows as tabs that never pause. Probed
     /// while the menu opens — never on a timer, and never for a browser the
     /// user switched off, which would prompt for Automation access for nothing.
     private func javaScriptWarning(for controller: any MediaController) -> NSMenuItem? {
-        guard let browser = controller as? ChromeController,
+        guard let browser = controller as? BrowserController,
               coordinator.settings.enabledControllers.contains(browser.id),
               case .disabled = browser.javaScriptAccess()
         else { return nil }

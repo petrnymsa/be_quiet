@@ -17,6 +17,10 @@ public struct MediaControllerID: RawRepresentable, Hashable, Sendable, CustomStr
     }
 
     public static let chrome = MediaControllerID.chrome(bundleID: "com.google.Chrome")
+
+    /// Safari is the only WebKit browser BeQuiet can script, so its identity
+    /// needs no bundle ID.
+    public static let safari = MediaControllerID(rawValue: "safari")
 }
 
 /// Describes what a controller paused so that exactly that can be resumed.

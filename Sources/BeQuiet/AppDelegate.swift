@@ -22,7 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controllers: [any MediaController] = [
             ScriptablePlayerController.spotify,
             ScriptablePlayerController.appleMusic,
-            ChromeController(),
+            BrowserController.chrome,
+            BrowserController.safari,
         ]
         let settings = store.load()
         self.store = store

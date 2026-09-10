@@ -42,12 +42,13 @@ struct BeQuietCLI {
                                     resuming (default from settings, 3 s).
             --ignore <name>         As above. Repeatable.
 
-          bequiet controller <spotify|chrome>
+          bequiet controller <spotify|music|chrome|safari>
                                     Check one controller by hand: print its state,
                                     pause it, wait 3 s, resume it. Triggers the
-                                    Automation permission prompt. `chrome` also
-                                    needs View → Developer → Allow JavaScript
-                                    from Apple Events in Chrome.
+                                    Automation permission prompt. `chrome` and
+                                    `safari` also need Allow JavaScript from
+                                    Apple Events (see Browser setup in the
+                                    README).
 
           bequiet --help            Show this message.
         """

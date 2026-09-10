@@ -15,7 +15,7 @@ public struct Settings: Hashable, Sendable {
     public var isEnabled = true
     public var debounceSeconds: TimeInterval = 2
     public var resumeDelaySeconds: TimeInterval = 3
-    public var enabledControllers: Set<MediaControllerID> = [.spotify, .appleMusic, .chrome]
+    public var enabledControllers: Set<MediaControllerID> = [.spotify, .appleMusic, .chrome, .safari]
     /// Bundle IDs or executable names that never count as microphone activity.
     public var ignoredProcesses: Set<String> = Settings.defaultIgnoredProcesses
 
@@ -23,7 +23,7 @@ public struct Settings: Hashable, Sendable {
         isEnabled: Bool = true,
         debounceSeconds: TimeInterval = 2,
         resumeDelaySeconds: TimeInterval = 3,
-        enabledControllers: Set<MediaControllerID> = [.spotify, .appleMusic, .chrome],
+        enabledControllers: Set<MediaControllerID> = [.spotify, .appleMusic, .chrome, .safari],
         ignoredProcesses: Set<String> = Settings.defaultIgnoredProcesses
     ) {
         self.isEnabled = isEnabled
@@ -40,7 +40,7 @@ public struct Settings: Hashable, Sendable {
 /// `@unchecked Sendable` because `UserDefaults` is thread-safe but not marked so.
 public final class SettingsStore: @unchecked Sendable {
     /// Controllers BeQuiet knows about; every one of them is on by default.
-    private static let knownControllers: [MediaControllerID] = [.spotify, .appleMusic, .chrome]
+    private static let knownControllers: [MediaControllerID] = [.spotify, .appleMusic, .chrome, .safari]
 
     private enum Key {
         static let enabled = "enabled"
