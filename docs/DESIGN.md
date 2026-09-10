@@ -18,9 +18,9 @@ AutoPause. Swift, SwiftPM, no external dependencies, macOS 14+.
 
 ## Non-goals (for now)
 
-- Safari, other browsers — the `MediaController` protocol keeps them easy to
-  add later. (Apple Music was on this list until a colleague asked for it; see
-  Media control.)
+- Firefox and other non-Chromium, non-WebKit browsers — no scripting surface
+  for tab JavaScript. (Apple Music and Safari were on this list until a
+  colleague asked for them; see Media control.)
 - Pausing media the user starts *during* a call.
 - Distribution signing / notarization. Ad-hoc signing only.
 
@@ -179,7 +179,18 @@ correctly reports "nothing to pause", which is indistinguishable from silence.
 the CLI prints the result (`controller chrome`, startup warning in `run`) and
 the menu bar app shows a warning item under the Chrome checkbox.
 
-Known limitation: `play()` from an Apple Event may be blocked by Chrome's
+**Safari** — same mechanism with two differences. The setting sits one level
+deeper (*Develop → Allow JavaScript from Apple Events*, and the Develop menu
+itself needs Settings → Advanced → *Show features for web developers*), and
+Safari tabs have no `id`, only an `index`, so a `window:tab` receipt would
+break on reordering. Both browsers therefore move to one `BrowserController`
+with a scripting dialect (Chrome: `execute tabRef javascript …`, Safari:
+`do JavaScript … in tabRef`) and **marker-based resume**: instead of
+addressing tabs, resume scans the http(s) tabs again and plays only elements
+carrying `data-bequiet-paused`. Receipt items keep the tab hints for logging
+only. The JavaScript-access probe and the menu warning apply to both.
+
+Known limitation: `play()` from an Apple Event may be blocked by the browser's
 autoplay policy on pages without prior user activation. Documented, not
 worked around.
 
