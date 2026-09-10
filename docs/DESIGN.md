@@ -175,7 +175,9 @@ Presets exposed in menu submenus: debounce 0.5 / 1 / 2 / 3 / 5 s, resume delay
 - SwiftPM cannot produce `.app` bundles; the `Makefile` assembles
   `dist/BeQuiet.app` (binary, `Info.plist` with `LSUIElement`,
   `NSAppleEventsUsageDescription`, bundle ID, version) and signs it ad-hoc
-  (`codesign -s -`). Ad-hoc signatures change on every rebuild, so macOS
+  (`codesign -s -`). Targets: `make app` (current arch), `make install`
+  (copy to `/Applications`), `make dist` (universal arm64 + x86_64 zip for
+  GitHub Releases). Ad-hoc signatures change on every rebuild, so macOS
   re-asks the Automation permission after each rebuild — documented.
 - `SMAppService` needs the bundle; README recommends copying to
   `/Applications` before enabling Launch at Login.
@@ -208,3 +210,41 @@ Phase 1 deliverable and permanent debugging aid:
    Login, README.
 
 Each phase ends with a manual test by the user before the next one starts.
+
+## Follow-ups (post Phase 4)
+
+### Distribution without a paid Apple Developer account
+
+TestFlight is not an option: it requires the paid Developer Program, and a
+macOS TestFlight build would have to be sandboxed, which makes Apple Events to
+Spotify/Chrome need exception entitlements. Realistic paths:
+
+1. **Build from source** — `git clone` + `make install`. Locally built
+   binaries carry no quarantine attribute, so Gatekeeper never intervenes.
+   Requires Xcode Command Line Tools. Best for developer colleagues.
+2. **Ad-hoc signed `.app` via GitHub Releases** — `make dist` produces a
+   universal (arm64 + x86_64) zip. Recipients hit Gatekeeper once and must use
+   System Settings → Privacy & Security → *Open Anyway* (right-click → Open no
+   longer works since Sequoia), or run
+   `xattr -dr com.apple.quarantine /Applications/BeQuiet.app`.
+3. **Homebrew tap** — repo `petrnymsa/homebrew-tap` with a cask:
+
+   ```ruby
+   cask "bequiet" do
+     version "0.1.0"
+     sha256 "…"
+     url "https://github.com/petrnymsa/be_quiet/releases/download/v#{version}/BeQuiet-#{version}.zip"
+     name "BeQuiet"
+     desc "Pauses Spotify and Chrome media while the microphone is in use"
+     homepage "https://github.com/petrnymsa/be_quiet"
+     depends_on macos: ">= :sonoma"
+
+     app "BeQuiet.app"
+
+     zap trash: "~/Library/Preferences/cz.nymsa.BeQuiet.plist"
+   end
+   ```
+
+   Homebrew strips the quarantine attribute on install, so the cask route
+   avoids the Gatekeeper dialog entirely; the ad-hoc signature is still
+   accepted because there is no notarization check for non-quarantined apps.
