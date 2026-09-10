@@ -61,11 +61,32 @@ Two CoreAudio signals are observed, neither requires microphone permission
    output regardless of device topology and tells *which* process holds the
    microphone.
 
-**Truth rule (initial):** the microphone is active iff at least one process
-other than BeQuiet reports `IsRunningInput == 1`. Device-level notifications
-only trigger a re-evaluation of the process snapshot and serve as a fallback
-if the process list is unavailable. Phase 1 logs both aggregates side by side
-so the rule can be validated across several machines and adjusted.
+**Truth rule:** the microphone is active iff at least one process other than
+BeQuiet reports `IsRunningInput == 1`. Device-level notifications only trigger
+a re-evaluation of the process snapshot and serve as a fallback if the process
+list is unavailable. The CLI logs both aggregates side by side so the rule can
+be validated across machines.
+
+Phase 1 findings (validated with Google Meet in Chrome, Spotify on a USB
+headset):
+
+- The device-level false positive is real and immediate: a bidirectional
+  headset reports `IsRunningSomewhere = 1` while Spotify merely plays into it.
+  The process-level rule ignores it correctly.
+- `kAudioProcessPropertyIsRunningInput`/`IsRunningOutput` **do not deliver
+  notifications**; only `kAudioProcessPropertyIsRunning` does, and only on
+  0 → 1. A process that already runs output (Teams after a notification sound,
+  Chrome's audio helper while YouTube plays) and then starts input produces no
+  notification, and neither does a bidirectional device that is already running
+  for output. `MicMonitor` therefore re-reads the process flags on every device
+  running change and additionally polls them (default 1 s) **while any
+  input-capable device is running** — when none runs, no process can capture
+  and the timer is idle.
+- Chrome routes all audio through one `com.google.Chrome.helper` process, so
+  a Meet call shows up there as `input=1`.
+- `kAudioProcessPropertyBundleID` returns an empty string (not an error) for
+  unbundled processes; `kAudioProcessPropertyDevices` (input scope) lists the
+  device even for output-only processes, so it is not an input indicator.
 
 Other requirements:
 
@@ -100,8 +121,10 @@ public protocol MediaController: Sendable {
 }
 ```
 
-`PauseReceipt` is an opaque, controller-specific value: a marker for Spotify,
-a list of `(windowID, tabID)` for Chrome.
+`PauseReceipt` is `{ controller: MediaControllerID, items: [String] }`; the
+items are opaque to everyone but the controller that produced them (empty for
+Spotify, `"windowID:tabID"` entries for Chrome). Keeping it a plain
+`Hashable` value keeps the coordinator tests trivial.
 
 **Spotify** — AppleScript via `NSAppleScript` (ScriptingBridge needs generated
 headers, awkward under SwiftPM). Guard with `NSRunningApplication` first:
@@ -127,15 +150,27 @@ and trigger a one-time Automation permission prompt per target app.
 
 ## Coordinator (`BeQuietCore`)
 
-`@MainActor final class PauseCoordinator` consumes `MicMonitor.events`,
-applies timing, drives the controllers, and exposes `@Observable` state for
-the UI. Time is injected (`Clock`) so the state machine is unit-testable.
+Split in two for testability:
+
+- `PauseStateMachine` — a pure value type: `handle(event) -> [Effect]`. No
+  async, no timers, no I/O. Events: `micActive`, `micInactive`,
+  `debounceElapsed`, `resumeDelayElapsed`, `pauseCompleted([PauseReceipt])`,
+  `settingsChanged(Settings)`. Effects: `startDebounce`/`cancelDebounce`,
+  `startResumeDelay`/`cancelResumeDelay`, `pause(Set<MediaControllerID>)`,
+  `resume([PauseReceipt])`. All timing and bookkeeping rules below are unit
+  tests against this type.
+- `@MainActor @Observable PauseCoordinator` — thin executor: feeds mic
+  transitions into the machine, runs effects (timers through an injected
+  `TimerScheduler`, controller calls in tasks, completion fed back as
+  `pauseCompleted`), logs phase transitions, exposes `phase` / `isMicActive` /
+  `heldReceipts` for the UI.
 
 ```
 idle ──mic on──▶ arming            start debounce timer (default 2 s)
 arming ──mic off──▶ idle           short burst, ignored
-arming ──timer──▶ paused           pauseIfPlaying() on every enabled controller,
-                                   store the receipts
+arming ──timer──▶ pausing          pauseIfPlaying() on every enabled controller
+pausing ──completed──▶ paused      store the receipts (→ resumePending directly
+                                   if the mic already went off meanwhile)
 paused ──mic off──▶ resumePending  start resume timer (default 3 s)
 resumePending ──mic on──▶ paused   reconnect / device switch: cancel timer, keep receipts
 resumePending ──timer──▶ idle      resume(receipt) for each stored receipt, clear them
@@ -150,6 +185,11 @@ Rules:
 - Disabling BeQuiet or quitting while in `paused`/`resumePending` resumes the
   stored receipts immediately.
 - A controller toggled off while it holds a receipt is resumed at that moment.
+- A `pauseCompleted` arriving after the machine already left `pausing`
+  (disabled mid-pause) resumes those receipts immediately, so nothing stays
+  paused by accident.
+- Changing debounce / resume delay does not restart a timer already running;
+  new values apply to the next one.
 
 ## Settings
 
@@ -189,13 +229,20 @@ Phase 1 deliverable and permanent debugging aid:
 - `bequiet watch` — prints the initial device and process snapshot, then a
   timestamped line for every device/process change and for every change of
   the two aggregates (`process=1 device=0`).
-- Later: `bequiet pause` / `bequiet resume` to exercise controllers manually.
+- `bequiet run [--debounce s] [--resume-delay s]` — the full pipeline
+  (monitor → coordinator → controllers) with a timestamped line per mic and
+  phase transition. SIGINT resumes anything held before exiting.
+- `bequiet controller <id>` — exercises one controller manually (state, pause,
+  wait, resume); also triggers the one-time Automation permission prompt.
 
 ## Testing
 
-- `BeQuietCoreTests`: state machine with a fake clock, a scripted mic event
-  source, and recording fake controllers. Covers debounce, resume delay,
-  mid-call drop-out, nil receipts, disable-while-paused.
+- `BeQuietCoreTests` (Swift Testing): exhaustive `PauseStateMachine` tests
+  (debounce, resume delay, mid-call drop-out, empty receipts, disable while
+  paused, controller toggled off, late `pauseCompleted`), a few
+  `PauseCoordinator` tests with a fake scheduler and recording fake
+  controllers, and a `SettingsStore` round trip through a scratch
+  `UserDefaults` suite.
 - CoreAudio and AppleScript layers are verified manually per phase (real
   Teams / Slack / Meet / AirPods); the CLI exists for that.
 
