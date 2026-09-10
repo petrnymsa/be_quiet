@@ -42,6 +42,9 @@ public struct AudioProcessInfo: Sendable, Hashable, Identifiable {
     public let id: AudioObjectID
     public let pid: pid_t
     public let bundleID: String?
+    /// Last path component of the executable, the only handle on a process that
+    /// has no bundle ID (`qemu-system-aarch64`, daemons, command line tools).
+    public let executableName: String?
     public let isRunningInput: Bool
     public let isRunningOutput: Bool
     public let inputDeviceIDs: [AudioObjectID]
@@ -50,6 +53,7 @@ public struct AudioProcessInfo: Sendable, Hashable, Identifiable {
         id: AudioObjectID,
         pid: pid_t,
         bundleID: String?,
+        executableName: String? = nil,
         isRunningInput: Bool,
         isRunningOutput: Bool,
         inputDeviceIDs: [AudioObjectID]
@@ -57,6 +61,7 @@ public struct AudioProcessInfo: Sendable, Hashable, Identifiable {
         self.id = id
         self.pid = pid
         self.bundleID = bundleID
+        self.executableName = executableName
         self.isRunningInput = isRunningInput
         self.isRunningOutput = isRunningOutput
         self.inputDeviceIDs = inputDeviceIDs
@@ -64,8 +69,13 @@ public struct AudioProcessInfo: Sendable, Hashable, Identifiable {
 
     public var hasAudioIO: Bool { isRunningInput || isRunningOutput }
 
+    /// How the user identifies this process in the ignore list. `nil` when
+    /// neither a bundle ID nor an executable path could be read, which leaves
+    /// the pid as the only handle — too volatile to persist.
+    public var identityKey: String? { bundleID ?? executableName }
+
     /// Bundle IDs are missing for daemons and command line tools.
-    public var displayName: String { bundleID ?? "<pid \(pid)>" }
+    public var displayName: String { bundleID ?? executableName ?? "<pid \(pid)>" }
 }
 
 public struct MicSnapshot: Sendable, Hashable {
@@ -76,26 +86,45 @@ public struct MicSnapshot: Sendable, Hashable {
     /// True when `kAudioHardwarePropertyProcessObjectList` could not be read and
     /// `micActive` therefore falls back to the device-level aggregate.
     public let usesDeviceLevelFallback: Bool
+    /// Identity keys (`AudioProcessInfo.identityKey`) that never count as
+    /// microphone activity.
+    public let ignoredProcesses: Set<String>
 
     public init(
         devices: [AudioDeviceInfo],
         processes: [AudioProcessInfo],
-        usesDeviceLevelFallback: Bool
+        usesDeviceLevelFallback: Bool,
+        ignoredProcesses: Set<String> = []
     ) {
         self.devices = devices
         self.processes = processes
         self.usesDeviceLevelFallback = usesDeviceLevelFallback
+        self.ignoredProcesses = ignoredProcesses
     }
 
     public var deviceLevelActive: Bool { devices.contains(where: \.isRunningSomewhere) }
 
-    public var processLevelActive: Bool { processes.contains(where: \.isRunningInput) }
+    public var processLevelActive: Bool { !activeProcesses.isEmpty }
 
     public var micActive: Bool { usesDeviceLevelFallback ? deviceLevelActive : processLevelActive }
 
-    public var activeProcesses: [AudioProcessInfo] { processes.filter(\.isRunningInput) }
+    /// Processes running input that count towards microphone activity.
+    public var activeProcesses: [AudioProcessInfo] {
+        processes.filter { $0.isRunningInput && !isIgnored($0) }
+    }
+
+    /// Processes running input that the ignore list excuses — the Android
+    /// Emulator and virtual machines hold the microphone permanently.
+    public var ignoredActiveProcesses: [AudioProcessInfo] {
+        processes.filter { $0.isRunningInput && isIgnored($0) }
+    }
 
     public var processesWithAudioIO: [AudioProcessInfo] { processes.filter(\.hasAudioIO) }
+
+    public func isIgnored(_ process: AudioProcessInfo) -> Bool {
+        guard let key = process.identityKey else { return false }
+        return ignoredProcesses.contains(key)
+    }
 
     public var activityReason: String {
         guard !usesDeviceLevelFallback else {
@@ -104,8 +133,16 @@ public struct MicSnapshot: Sendable, Hashable {
             }
             return "fallback: device \(device.name) running"
         }
-        guard let process = activeProcesses.first else { return "no process is running input" }
+        guard let process = activeProcesses.first else {
+            return "no process is running input\(ignoredSuffix)"
+        }
         return "process \(process.displayName) (pid \(process.pid)) started input"
+    }
+
+    private var ignoredSuffix: String {
+        let names = ignoredActiveProcesses.map(\.displayName)
+        guard !names.isEmpty else { return "" }
+        return " (ignoring \(names.joined(separator: ", ")))"
     }
 
     public func deviceName(for id: AudioObjectID) -> String {

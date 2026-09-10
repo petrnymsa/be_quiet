@@ -14,6 +14,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let controllers: [any MediaController]
     private let micActivity: MicActivity
     private let store: SettingsStore
+    /// Everything outside the menu that a settings change has to reach — the
+    /// monitor's ignore list — so this class stays user interface only.
+    private let onSettingsChanged: (Settings) -> Void
     private let launchAtLogin = LaunchAtLogin()
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -23,12 +26,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         coordinator: PauseCoordinator,
         controllers: [any MediaController],
         micActivity: MicActivity,
-        store: SettingsStore
+        store: SettingsStore,
+        onSettingsChanged: @escaping (Settings) -> Void
     ) {
         self.coordinator = coordinator
         self.controllers = controllers
         self.micActivity = micActivity
         self.store = store
+        self.onSettingsChanged = onSettingsChanged
         super.init()
 
         // Enablement is decided here, not by target/action validation: the
@@ -69,7 +74,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             isEnabled: coordinator.settings.isEnabled,
             phase: coordinator.phase,
             pausedControllerNames: pausedControllerNames,
-            micProcessNames: micActivity.processNames
+            micProcessNames: micActivity.processNames,
+            ignoredProcessNames: micActivity.ignoredProcessNames
         )
     }
 
@@ -104,6 +110,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                 menu.addItem(warning)
             }
         }
+        menu.addItem(.separator())
+
+        menu.addItem(ignoredAppsSubmenu(settings))
         menu.addItem(.separator())
 
         menu.addItem(
@@ -143,6 +152,62 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let item = deadItem("⚠︎ Allow JavaScript from Apple Events is off in \(browser.displayName)")
         item.indentationLevel = 1
         item.toolTip = browser.javaScriptDisabledHint
+        return item
+    }
+
+    /// The ignore list, built around what is holding the microphone right now:
+    /// tick an application to stop it counting as a call. Identities that are
+    /// ignored but not running are listed below so they can be removed again.
+    private func ignoredAppsSubmenu(_ settings: Settings) -> NSMenuItem {
+        let title = "Ignored apps"
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
+
+        let users = micActivity.microphoneUsers
+        if !users.isEmpty {
+            submenu.addItem(deadItem("Using the microphone now"))
+            for user in users {
+                guard let key = user.identityKey else {
+                    // Neither a bundle ID nor an executable path: nothing that
+                    // would still identify this process after a restart.
+                    submenu.addItem(deadItem(user.displayName))
+                    continue
+                }
+                submenu.addItem(
+                    checkbox(
+                        user.displayName,
+                        isOn: user.isIgnored,
+                        action: #selector(toggleIgnoredProcess(_:)),
+                        representedObject: key
+                    )
+                )
+            }
+        }
+
+        let inactive = settings.ignoredProcesses
+            .subtracting(users.compactMap(\.identityKey))
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        if !inactive.isEmpty {
+            if !users.isEmpty { submenu.addItem(.separator()) }
+            submenu.addItem(deadItem("Ignored"))
+            for key in inactive {
+                submenu.addItem(
+                    checkbox(
+                        key,
+                        isOn: true,
+                        action: #selector(toggleIgnoredProcess(_:)),
+                        representedObject: key
+                    )
+                )
+            }
+        }
+
+        if submenu.items.isEmpty {
+            submenu.addItem(deadItem("No app is using the microphone"))
+        }
+
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
         return item
     }
 
@@ -249,6 +314,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         Task { await controller.prepare() }
     }
 
+    @objc private func toggleIgnoredProcess(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        update { settings in
+            if settings.ignoredProcesses.contains(key) {
+                settings.ignoredProcesses.remove(key)
+            } else {
+                settings.ignoredProcesses.insert(key)
+            }
+        }
+    }
+
     @objc private func setDebounce(_ sender: NSMenuItem) {
         guard let seconds = sender.representedObject as? TimeInterval else { return }
         update { $0.debounceSeconds = seconds }
@@ -280,6 +356,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         store.save(settings)
         coordinator.settings = settings
+        onSettingsChanged(settings)
         appLogger.debug("settings changed from the menu")
     }
 }

@@ -44,5 +44,9 @@ let package = Package(
             name: "MediaControlTests",
             dependencies: ["MediaControl"]
         ),
+        .testTarget(
+            name: "MicMonitorTests",
+            dependencies: ["MicMonitor"]
+        ),
     ]
 )

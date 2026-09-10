@@ -1,16 +1,26 @@
+import BeQuietCore
 import CoreAudio
 import Darwin
 import Foundation
 import MicMonitor
 
 enum WatchCommand {
-    static func run() async {
-        let monitor = MicMonitor()
+    static func run(arguments: [String]) async {
+        var arguments = arguments
+        guard let overrides = IgnoreOption.extract(from: &arguments) else { exit(2) }
+        guard arguments.isEmpty else {
+            Output.error("unknown option: \(arguments[0])")
+            exit(2)
+        }
+
+        let ignored = SettingsStore().load().ignoredProcesses.union(overrides)
+        let monitor = MicMonitor(ignoredProcesses: ignored)
         let events = monitor.start()
         let interrupts = Interrupts.install { monitor.stop() }
         defer { interrupts.forEach { $0.cancel() } }
 
         Output.line("bequiet watch — CoreAudio microphone activity (Ctrl-C to stop)")
+        if let line = IgnoreOption.headerLine(ignored) { Output.line(line) }
         Output.line()
 
         let initial = monitor.snapshot()
@@ -44,7 +54,7 @@ enum WatchCommand {
                 Output.event(
                     "PROCESS",
                     "\(process.displayName) pid=\(process.pid) "
-                        + "input=\(flag(process.isRunningInput)) output=\(flag(process.isRunningOutput))"
+                        + "\(inputState(process, ignored: ignored)) output=\(flag(process.isRunningOutput))"
                         + (inputDevices.isEmpty ? "" : "  inputDevices=[\(inputDevices.joined(separator: ", "))]")
                 )
 
@@ -88,12 +98,19 @@ enum WatchCommand {
             Output.line(
                 "  pid \(String(process.pid).padded(to: pidWidth))  "
                     + "\(process.displayName.padded(to: bundleWidth))  "
-                    + "input=\(flag(process.isRunningInput)) output=\(flag(process.isRunningOutput))  "
+                    + "\(inputState(process, ignored: snapshot.ignoredProcesses)) "
+                    + "output=\(flag(process.isRunningOutput))  "
                     + "inputDevices=[\(inputDevices.joined(separator: ", "))]"
             )
         }
 
         Output.line(snapshot.aggregatesLine)
+    }
+
+    /// The input flag plus a marker for a process the ignore list excuses.
+    private static func inputState(_ process: AudioProcessInfo, ignored: Set<String>) -> String {
+        let isIgnored = process.identityKey.map(ignored.contains) ?? false
+        return "input=\(flag(process.isRunningInput))" + (isIgnored ? " (ignored)" : "")
     }
 
     private static func names(in snapshot: MicSnapshot) -> [AudioObjectID: String] {

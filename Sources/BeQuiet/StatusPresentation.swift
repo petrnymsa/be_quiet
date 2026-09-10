@@ -16,11 +16,14 @@ struct StatusPresentation: Hashable {
     ///     holding a receipt.
     ///   - micProcessNames: display names of the processes holding the
     ///     microphone, already resolved to something human readable.
+    ///   - ignoredProcessNames: display names of the processes holding the
+    ///     microphone that the ignore list excuses.
     init(
         isEnabled: Bool,
         phase: PausePhase,
         pausedControllerNames: [String] = [],
-        micProcessNames: [String] = []
+        micProcessNames: [String] = [],
+        ignoredProcessNames: [String] = []
     ) {
         guard isEnabled else {
             icon = .listening
@@ -35,7 +38,11 @@ struct StatusPresentation: Hashable {
         case .idle:
             icon = .listening
             tooltip = "BeQuiet — idle"
-            statusText = "Idle"
+            // Naming them makes an emulator or virtual machine holding the
+            // microphone look deliberate rather than like a missed call.
+            statusText = ignoredProcessNames.isEmpty
+                ? "Idle"
+                : "Idle — ignoring \(ignoredProcessNames.list)"
 
         case .arming:
             icon = .armed

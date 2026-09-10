@@ -31,6 +31,18 @@ struct StatusPresentationTests {
         #expect(presentation.statusText == "Idle")
     }
 
+    @Test("idle names the ignored processes holding the microphone")
+    func idleWhileIgnoring() {
+        let presentation = StatusPresentation(
+            isEnabled: true,
+            phase: .idle,
+            ignoredProcessNames: ["qemu-system-aarch64"]
+        )
+        #expect(presentation.icon == .listening)
+        #expect(presentation.tooltip == "BeQuiet — idle")
+        #expect(presentation.statusText == "Idle — ignoring qemu-system-aarch64")
+    }
+
     @Test("arming names the processes holding the microphone")
     func arming() {
         let presentation = StatusPresentation(

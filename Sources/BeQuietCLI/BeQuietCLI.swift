@@ -7,7 +7,7 @@ struct BeQuietCLI {
 
         switch arguments.first ?? "watch" {
         case "watch":
-            await WatchCommand.run()
+            await WatchCommand.run(arguments: Array(arguments.dropFirst()))
         case "run":
             await RunCommand.run(arguments: Array(arguments.dropFirst()))
         case "controller":
@@ -25,9 +25,12 @@ struct BeQuietCLI {
         bequiet — BeQuiet debugging CLI
 
         Usage:
-          bequiet [watch]           Print the CoreAudio microphone snapshot, then a
+          bequiet [watch] [options] Print the CoreAudio microphone snapshot, then a
                                     timestamped line per device/process/aggregate
                                     change. Runs until interrupted (Ctrl-C).
+            --ignore <name>         Bundle ID or executable name that must not
+                                    count as microphone activity, on top of the
+                                    ignore list in the settings. Repeatable.
 
           bequiet run [options]     Pause the enabled media controllers while the
                                     microphone is active and resume them afterwards.
@@ -37,6 +40,7 @@ struct BeQuietCLI {
                                     from settings, 2 s).
             --resume-delay <s>      Wait after the microphone goes idle before
                                     resuming (default from settings, 3 s).
+            --ignore <name>         As above. Repeatable.
 
           bequiet controller <spotify|chrome>
                                     Check one controller by hand: print its state,

@@ -107,6 +107,7 @@ The icon is a template image, so it follows the light and dark menu bar.
 | `Pause Spotify` | whether Spotify is paused during calls |
 | `Pause Google Chrome` | whether playing Chrome tabs are paused during calls |
 | `⚠︎ Allow JavaScript from Apple Events is off …` | shown while Chrome refuses scripting; see *Chrome setup* |
+| `Ignored apps ▸` | applications whose microphone use is not a call: everything holding the microphone right now, ticked when ignored, plus the entries that are ignored but not running |
 | `Debounce ▸` | how long the microphone must stay active before media is paused (0.5–5 s) |
 | `Resume delay ▸` | how long the microphone must stay idle before media is resumed (1–10 s) |
 | `Launch at Login` | register BeQuiet as a login item; see below |
@@ -135,6 +136,13 @@ The icon is a template image, so it follows the light and dark menu bar.
   start while the microphone is active.
 - Media *in* the call — Meet's participants, a shared screen with sound — is a
   live stream and is never paused.
+- Virtual machines, the Android Emulator and audio tools hold the microphone
+  for their whole lifetime, without any call: to macOS they look exactly like
+  Teams. Open `Ignored apps ▸` while one of them runs and tick it; the
+  Android Emulator (`qemu-system-aarch64`) is ignored out of the box.
+- The first line of the menu says `Idle — ignoring qemu-system-aarch64` while
+  an ignored application holds the microphone, so a running emulator never
+  looks like a missed call.
 
 ## Launch at Login
 
@@ -154,6 +162,7 @@ values outside the menu presets can be set by hand:
 
 ```sh
 defaults write cz.nymsa.BeQuiet debounceSeconds -float 1.5
+defaults write cz.nymsa.BeQuiet ignoredProcesses -array qemu-system-aarch64 com.utmapp.UTM
 ```
 
 | key | type | default |
@@ -163,9 +172,15 @@ defaults write cz.nymsa.BeQuiet debounceSeconds -float 1.5
 | `resumeDelaySeconds` | Double | `3` |
 | `controller.spotify` | Bool | `true` |
 | `controller.chrome:com.google.Chrome` | Bool | `true` |
+| `ignoredProcesses` | [String] | `qemu-system-aarch64`, `qemu-system-x86_64` and their `-headless` variants |
 
 BeQuiet reads the settings at startup, so it has to be restarted afterwards. A
 value that matches no preset shows up in the submenu as `Custom: 1.5 s`.
+
+An entry of `ignoredProcesses` is a bundle ID, or the executable name for a
+process that has none — `bequiet watch` prints the name it uses for every
+process. An empty array means nothing is ignored; the defaults come back only
+when the key is removed (`defaults delete cz.nymsa.BeQuiet ignoredProcesses`).
 
 ## Debugging
 
@@ -177,6 +192,11 @@ swift run bequiet run                   # the full pipeline with a log line per 
 swift run bequiet controller spotify    # pause and resume one controller by hand
 swift run bequiet controller chrome
 ```
+
+`watch` and `run` take `--ignore <bundle ID or executable name>`, repeatable,
+which adds to the ignore list for that run only — the quick way to check
+whether a process that holds the microphone belongs on the list. Ignored
+processes are marked `input=1 (ignored)`.
 
 Both the app and the CLI log to the unified log:
 
@@ -209,7 +229,7 @@ Categories are `mic`, `coordinator`, `spotify`, `chrome` and `app`.
 
 ```sh
 swift build          # everything, debug
-swift test           # coordinator, settings, Chrome scripting, status presentation
+swift test           # coordinator, settings, snapshot rules, Chrome scripting, presentation
 make app             # dist/BeQuiet.app, current architecture, ad-hoc signed
 make install         # the same, copied to /Applications
 make dist            # universal (arm64 + x86_64) dist/BeQuiet-<version>.zip
@@ -224,7 +244,7 @@ Sources/
   BeQuietCore/    PauseStateMachine, PauseCoordinator, Settings
   BeQuietCLI/     `bequiet` — the debugging CLI
   BeQuiet/        the menu bar app (status item, menu, icon, launch at login)
-Tests/            state machine, coordinator, settings, scripting, presentation
+Tests/            state machine, coordinator, settings, snapshot rules, scripting, presentation
 Packaging/
   Info.plist      template for the app bundle
   Icons/          the SVG sources: AppIcon.svg (1024 squircle), MenuBarIcon.svg (18 pt template)

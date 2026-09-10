@@ -1,4 +1,5 @@
 import CoreAudio
+import Darwin
 import Foundation
 
 /// Observes microphone activity through CoreAudio without requesting microphone
@@ -22,6 +23,7 @@ public final class MicMonitor: @unchecked Sendable {
     private var listeners: [ListenerKey: ListenerBlock] = [:]
     private var devices: [AudioObjectID: AudioDeviceInfo] = [:]
     private var processes: [AudioObjectID: AudioProcessInfo] = [:]
+    private var ignoredKeys: Set<String>
     private var processListUnavailable = false
     private var micActive = false
     private var deviceLevelActive = false
@@ -32,8 +34,26 @@ public final class MicMonitor: @unchecked Sendable {
 
     /// `pollInterval` bounds how late an unnotified process transition is
     /// noticed; see `updatePolling()`.
-    public init(pollInterval: TimeInterval = 1) {
+    public init(pollInterval: TimeInterval = 1, ignoredProcesses: Set<String> = []) {
         self.pollInterval = pollInterval
+        ignoredKeys = ignoredProcesses
+    }
+
+    /// Processes that never count as microphone activity, identified by
+    /// `AudioProcessInfo.identityKey`. Assigning re-evaluates the aggregates
+    /// immediately, so un-ignoring a process that is holding the microphone
+    /// makes the microphone active at once, and ignoring the last active one
+    /// makes it idle.
+    public var ignoredProcesses: Set<String> {
+        get { queue.sync { ignoredKeys } }
+        set {
+            queue.sync {
+                guard newValue != ignoredKeys else { return }
+                ignoredKeys = newValue
+                guard isRunning else { return }
+                recomputeAggregates()
+            }
+        }
     }
 
     /// Starts observing and returns the event stream. The current state is taken
@@ -94,7 +114,8 @@ public final class MicMonitor: @unchecked Sendable {
                 return Self.makeSnapshot(
                     devices: scanInputDevices(),
                     processes: scan.processes,
-                    usesDeviceLevelFallback: !scan.isAvailable
+                    usesDeviceLevelFallback: !scan.isAvailable,
+                    ignoredProcesses: ignoredKeys
                 )
             }
             return makeSnapshot()
@@ -274,31 +295,47 @@ public final class MicMonitor: @unchecked Sendable {
             id: id,
             pid: pid,
             bundleID: AudioObject.string(.processBundleID, of: id),
+            executableName: Self.executableName(of: pid),
             isRunningInput: AudioObject.flag(.processIsRunningInput, of: id) ?? false,
             isRunningOutput: AudioObject.flag(.processIsRunningOutput, of: id) ?? false,
             inputDeviceIDs: AudioObject.values(.processInputDevices, of: id, as: AudioObjectID.self) ?? []
         )
     }
 
+    /// `PROC_PIDPATHINFO_MAXSIZE` is a macro Swift does not import, so its
+    /// definition (`4 * MAXPATHLEN`) is spelled out here.
+    private static let executablePathCapacity = 4 * Int(MAXPATHLEN)
+
+    private static func executableName(of pid: pid_t) -> String? {
+        var buffer = [UInt8](repeating: 0, count: executablePathCapacity)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        let path = String(decoding: buffer[..<Int(length)], as: UTF8.self)
+        return path.isEmpty ? nil : URL(fileURLWithPath: path).lastPathComponent
+    }
+
     private func makeSnapshot() -> MicSnapshot {
         Self.makeSnapshot(
             devices: devices,
             processes: processes,
-            usesDeviceLevelFallback: processListUnavailable
+            usesDeviceLevelFallback: processListUnavailable,
+            ignoredProcesses: ignoredKeys
         )
     }
 
     private static func makeSnapshot(
         devices: [AudioObjectID: AudioDeviceInfo],
         processes: [AudioObjectID: AudioProcessInfo],
-        usesDeviceLevelFallback: Bool
+        usesDeviceLevelFallback: Bool,
+        ignoredProcesses: Set<String>
     ) -> MicSnapshot {
         MicSnapshot(
             devices: devices.values.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             },
             processes: processes.values.sorted { $0.pid < $1.pid },
-            usesDeviceLevelFallback: usesDeviceLevelFallback
+            usesDeviceLevelFallback: usesDeviceLevelFallback,
+            ignoredProcesses: ignoredProcesses
         )
     }
 

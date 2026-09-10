@@ -7,13 +7,17 @@ import MicMonitor
 enum RunCommand {
     @MainActor
     static func run(arguments: [String]) async {
-        guard let overrides = Overrides(arguments: arguments) else { exit(2) }
+        var arguments = arguments
+        guard let ignoreOverrides = IgnoreOption.extract(from: &arguments),
+              let overrides = Overrides(arguments: arguments)
+        else { exit(2) }
 
         var settings = SettingsStore().load()
         if let seconds = overrides.debounceSeconds { settings.debounceSeconds = seconds }
         if let seconds = overrides.resumeDelaySeconds { settings.resumeDelaySeconds = seconds }
+        settings.ignoredProcesses.formUnion(ignoreOverrides)
 
-        let monitor = MicMonitor()
+        let monitor = MicMonitor(ignoredProcesses: settings.ignoredProcesses)
         let events = monitor.start()
         let interrupts = Interrupts.install { monitor.stop() }
 
@@ -32,6 +36,7 @@ enum RunCommand {
                 + "debounce: \(settings.debounceSeconds)s  resume delay: \(settings.resumeDelaySeconds)s  "
                 + "enabled: \(flag(settings.isEnabled))"
         )
+        if let line = IgnoreOption.headerLine(settings.ignoredProcesses) { Output.line(line) }
         let initial = monitor.snapshot()
         Output.line(initial.aggregatesLine)
         warnAboutBrowserScripting(controllers, enabled: settings.enabledControllers)

@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store: SettingsStore
     private let controllers: [any MediaController]
     private let coordinator: PauseCoordinator
-    private let monitor = MicMonitor()
+    private let monitor: MicMonitor
     private let micActivity = MicActivity()
 
     private var statusItemController: StatusItemController?
@@ -20,9 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         let store = SettingsStore()
         let controllers: [any MediaController] = [SpotifyController(), ChromeController()]
+        let settings = store.load()
         self.store = store
         self.controllers = controllers
-        coordinator = PauseCoordinator(controllers: controllers, settings: store.load())
+        coordinator = PauseCoordinator(controllers: controllers, settings: settings)
+        monitor = MicMonitor(ignoredProcesses: settings.ignoredProcesses)
         super.init()
     }
 
@@ -35,7 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             coordinator: coordinator,
             controllers: controllers,
             micActivity: micActivity,
-            store: store
+            store: store,
+            onSettingsChanged: { [weak self] settings in
+                self?.monitor.ignoredProcesses = settings.ignoredProcesses
+            }
         )
 
         let settings = coordinator.settings
@@ -44,7 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             started — enabled: \(settings.isEnabled, privacy: .public), \
             controllers: \(settings.enabledControllers.map(\.rawValue).sorted().joined(separator: ", "), privacy: .public), \
             debounce: \(settings.debounceSeconds, privacy: .public)s, \
-            resume delay: \(settings.resumeDelaySeconds, privacy: .public)s
+            resume delay: \(settings.resumeDelaySeconds, privacy: .public)s, \
+            ignoring: \(settings.ignoredProcesses.sorted().joined(separator: ", "), privacy: .public)
             """
         )
         warmUpControllers()
@@ -83,17 +89,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // `start()` reports transitions only, so the current state is fed in by hand.
         let initial = monitor.snapshot()
-        micActivity.update(initial.activeProcesses)
+        micActivity.update(initial)
         coordinator.micActivityChanged(isActive: initial.micActive)
         appLogger.info("initial mic state: \(initial.micActive, privacy: .public)")
 
         eventTask = Task { [weak self] in
             for await event in events {
-                guard case let .micActivityChanged(isActive, reason, snapshot) = event else { continue }
                 guard let self else { return }
-                appLogger.debug("mic \(isActive, privacy: .public) — \(reason, privacy: .public)")
-                micActivity.update(snapshot.activeProcesses)
-                coordinator.micActivityChanged(isActive: isActive)
+                switch event {
+                case let .micActivityChanged(isActive, reason, snapshot):
+                    appLogger.debug("mic \(isActive, privacy: .public) — \(reason, privacy: .public)")
+                    micActivity.update(snapshot)
+                    coordinator.micActivityChanged(isActive: isActive)
+
+                case let .processListChanged(snapshot):
+                    micActivity.update(snapshot)
+
+                // An ignored process starting or stopping input leaves the
+                // aggregate alone, so the menu is refreshed from these too.
+                case .processRunningChanged:
+                    micActivity.update(monitor.snapshot())
+
+                case .deviceListChanged, .deviceRunningChanged, .deviceLevelActivityChanged:
+                    break
+                }
             }
         }
     }
