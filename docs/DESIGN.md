@@ -371,6 +371,8 @@ Spotify/Chrome need exception entitlements. Realistic paths:
    end
    ```
 
-   Homebrew strips the quarantine attribute on install, so the cask route
-   avoids the Gatekeeper dialog entirely; the ad-hoc signature is still
-   accepted because there is no notarization check for non-quarantined apps.
+   Homebrew quarantines cask downloads by default, so the ad-hoc build still
+   needs `brew install --no-quarantine …` (or `HOMEBREW_CASK_OPTS`); the cask
+   says so in its caveats. Implemented: `Packaging/bequiet.rb` template,
+   `make cask` / `make release` / `make publish-cask`, tap
+   `petrnymsa/homebrew-tap`.

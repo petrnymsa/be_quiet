@@ -44,6 +44,21 @@ as active as soon as any process other than BeQuiet reports input.
 
 ## Install
 
+### Homebrew
+
+```sh
+brew install --no-quarantine petrnymsa/tap/bequiet
+open /Applications/BeQuiet.app
+```
+
+`--no-quarantine` matters: the build is ad-hoc signed and not notarized, and
+Homebrew quarantines cask downloads by default, so without the flag Gatekeeper
+refuses to open the app. Upgrades work the same way
+(`brew upgrade --no-quarantine bequiet`), or set
+`HOMEBREW_CASK_OPTS=--no-quarantine` once in your shell profile.
+
+### From source
+
 ```sh
 git clone https://github.com/petrnymsa/be_quiet.git
 cd be_quiet
@@ -52,8 +67,12 @@ open /Applications/BeQuiet.app
 ```
 
 `make install` builds a release binary, assembles `dist/BeQuiet.app`, signs it
-ad-hoc and copies it to `/Applications`. BeQuiet then sits in the menu bar; it
-has no Dock icon and no main window.
+ad-hoc and copies it to `/Applications`. A locally built copy is never
+quarantined, so no flag is needed.
+
+### First launch
+
+BeQuiet sits in the menu bar; it has no Dock icon and no main window.
 
 On the first launch macOS asks for permission to control Spotify, Music, Google
 Chrome and Safari — one prompt per application that is running at the time.
@@ -255,6 +274,16 @@ make docs-images     # regenerate the README images from the SVG sources
 make clean
 ```
 
+### Releasing
+
+1. On `dev`: bump `VERSION` in the `Makefile`, add the section to
+   `CHANGELOG.md`, commit (`release: v0.2.0`), merge into `main`.
+2. On `main`: `make release` — builds the universal zip, tags `v<version>`,
+   pushes and creates the GitHub release with the changelog section as notes.
+3. `make publish-cask` — writes the cask with the zip's checksum into a
+   sibling checkout of [`petrnymsa/homebrew-tap`](https://github.com/petrnymsa/homebrew-tap)
+   (`TAP_DIR`, default `../homebrew-tap`) and pushes it.
+
 ```
 Sources/
   MicMonitor/     CoreAudio microphone detection, no AppKit
@@ -265,6 +294,7 @@ Sources/
 Tests/            state machine, coordinator, settings, snapshot rules, scripting, presentation
 Packaging/
   Info.plist      template for the app bundle
+  bequiet.rb      Homebrew cask template (version and checksum filled in by `make cask`)
   Icons/          the SVG sources: AppIcon.svg (1024 squircle), MenuBarIcon.svg (18 pt template)
   make-icons.swift  renders AppIcon.svg to BeQuiet.icns and the README images with AppKit alone
 docs/
