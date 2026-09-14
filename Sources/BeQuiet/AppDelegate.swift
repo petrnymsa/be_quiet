@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         let settings = coordinator.settings
-        appLogger.info(
+        appLogger.notice(
             """
             started — enabled: \(settings.isEnabled, privacy: .public), \
             controllers: \(settings.enabledControllers.map(\.rawValue).sorted().joined(separator: ", "), privacy: .public), \
@@ -68,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await coordinator.shutdown()
             monitor.stop()
             eventTask?.cancel()
-            appLogger.info("terminating")
+            appLogger.notice("terminating")
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -96,14 +96,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let initial = monitor.snapshot()
         micActivity.update(initial)
         coordinator.micActivityChanged(isActive: initial.micActive)
-        appLogger.info("initial mic state: \(initial.micActive, privacy: .public)")
+        appLogger.notice("initial mic state: \(initial.micActive, privacy: .public)")
 
         eventTask = Task { [weak self] in
             for await event in events {
                 guard let self else { return }
                 switch event {
                 case let .micActivityChanged(isActive, reason, snapshot):
-                    appLogger.debug("mic \(isActive, privacy: .public) — \(reason, privacy: .public)")
+                    appLogger.notice("mic \(isActive, privacy: .public) — \(reason, privacy: .public)")
                     micActivity.update(snapshot)
                     coordinator.micActivityChanged(isActive: isActive)
 

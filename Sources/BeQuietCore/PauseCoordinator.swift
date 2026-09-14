@@ -66,7 +66,7 @@ public final class PauseCoordinator {
 
         let held = heldReceipts
         heldReceipts = []
-        coordinatorLogger.info("shutdown, resuming \(held.count) receipt(s)")
+        coordinatorLogger.notice("shutdown, resuming \(held.count) receipt(s)")
         await resume(held)
     }
 
@@ -82,7 +82,7 @@ public final class PauseCoordinator {
         heldReceipts = machine.heldReceipts
 
         if previous != machine.phase {
-            coordinatorLogger.info(
+            coordinatorLogger.notice(
                 "\(previous, privacy: .public) → \(self.machine.phase, privacy: .public) (\(event.reason, privacy: .public))"
             )
             onTransition?(previous, machine.phase)

@@ -105,6 +105,17 @@ public final class MicMonitor: @unchecked Sendable {
         queue.sync { teardown() }
     }
 
+    /// Every audio device on the system, including output-only ones the monitor
+    /// does not track. For diagnostics: "where is the music actually going".
+    public static func allDevices() -> [AudioDeviceInfo] {
+        guard let ids = AudioObject.values(.deviceList, of: AudioObject.system, as: AudioObjectID.self) else {
+            return []
+        }
+        return ids.compactMap(makeDeviceInfo).sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
     /// Synchronous point-in-time state. While observing, this is the cached state
     /// maintained by the listeners; otherwise CoreAudio is scanned on the spot.
     public func snapshot() -> MicSnapshot {
@@ -144,7 +155,7 @@ public final class MicMonitor: @unchecked Sendable {
     }
 
     private func handleDeviceRunningChanged(_ id: AudioObjectID) {
-        guard isRunning, let previous = devices[id], let updated = makeDeviceInfo(id), updated != previous else {
+        guard isRunning, let previous = devices[id], let updated = Self.makeDeviceInfo(id), updated != previous else {
             return
         }
         devices[id] = updated
@@ -253,13 +264,13 @@ public final class MicMonitor: @unchecked Sendable {
         }
         var result: [AudioObjectID: AudioDeviceInfo] = [:]
         for id in ids {
-            guard let info = makeDeviceInfo(id), info.hasInput else { continue }
+            guard let info = Self.makeDeviceInfo(id), info.hasInput else { continue }
             result[id] = info
         }
         return result
     }
 
-    private func makeDeviceInfo(_ id: AudioObjectID) -> AudioDeviceInfo? {
+    private static func makeDeviceInfo(_ id: AudioObjectID) -> AudioDeviceInfo? {
         let hasInput = (AudioObject.dataSize(.inputStreams, of: id) ?? 0) > 0
         let hasOutput = (AudioObject.dataSize(.outputStreams, of: id) ?? 0) > 0
         guard hasInput || hasOutput else { return nil }

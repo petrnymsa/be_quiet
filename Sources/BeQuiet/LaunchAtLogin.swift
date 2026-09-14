@@ -32,7 +32,7 @@ struct LaunchAtLogin {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            appLogger.info("launch at login \(isEnabled ? "registered" : "unregistered", privacy: .public)")
+            appLogger.notice("launch at login \(isEnabled ? "registered" : "unregistered", privacy: .public)")
         } catch {
             appLogger.error(
                 """

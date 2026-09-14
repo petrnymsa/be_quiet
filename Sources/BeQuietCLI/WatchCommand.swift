@@ -89,6 +89,17 @@ enum WatchCommand {
             )
         }
 
+        // Where the music goes matters for the timing analysis: an output-only
+        // device (USB speakers, HDMI) never triggers the monitor's polling.
+        let outputOnly = MicMonitor.allDevices().filter { !$0.hasInput }
+        Output.line("Output-only devices, not tracked (\(outputOnly.count)):")
+        for device in outputOnly {
+            Output.line(
+                "  [\(device.isRunningSomewhere ? "running" : "idle   ")] "
+                    + "\(device.name.quoted)  transport=\(device.transport)"
+            )
+        }
+
         let processes = snapshot.processesWithAudioIO
         Output.line("Processes with audio IO (\(processes.count)):")
         let pidWidth = processes.map { String($0.pid).count }.max() ?? 0
