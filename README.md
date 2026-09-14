@@ -47,15 +47,24 @@ as active as soon as any process other than BeQuiet reports input.
 ### Homebrew
 
 ```sh
-brew install --no-quarantine petrnymsa/tap/bequiet
+brew trust petrnymsa/tap
+brew install --cask petrnymsa/tap/bequiet
 open /Applications/BeQuiet.app
 ```
 
-`--no-quarantine` matters: the build is ad-hoc signed and not notarized, and
-Homebrew quarantines cask downloads by default, so without the flag Gatekeeper
-refuses to open the app. Upgrades work the same way
-(`brew upgrade --no-quarantine bequiet`), or set
-`HOMEBREW_CASK_OPTS=--no-quarantine` once in your shell profile.
+`brew trust` is required since Homebrew 6, which refuses to load third-party
+taps until they are trusted explicitly.
+
+The build is ad-hoc signed and not notarized, and Homebrew keeps cask
+downloads quarantined, so Gatekeeper refuses the first launch. Allow it once
+under System Settings → Privacy & Security → *Open Anyway*, or clear the flag:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/BeQuiet.app
+```
+
+An upgrade (`brew upgrade bequiet`) carries a new ad-hoc signature, so macOS
+may ask again.
 
 ### From source
 
@@ -256,11 +265,11 @@ Categories are `mic`, `coordinator`, `player`, `browser` and `app`.
   adding them yet.
 - **Media started during a call is left alone**, by design: while the
   microphone is active nothing is scanned or paused.
-- **Gatekeeper stops a downloaded build.** The zip from `make dist` carries no
-  notarization, so a downloaded copy has to be allowed under System Settings →
-  Privacy & Security → *Open Anyway*, or unquarantined by hand:
-  `xattr -dr com.apple.quarantine /Applications/BeQuiet.app`. A locally built
-  copy is never quarantined and needs neither.
+- **Gatekeeper stops a downloaded build.** The release zip carries no
+  notarization, so a copy installed from GitHub or through Homebrew has to be
+  allowed under System Settings → Privacy & Security → *Open Anyway*, or
+  unquarantined by hand: `xattr -dr com.apple.quarantine /Applications/BeQuiet.app`.
+  A locally built copy is never quarantined and needs neither.
 
 ## Development
 

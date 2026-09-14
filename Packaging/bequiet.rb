@@ -12,7 +12,7 @@ cask "bequiet" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "BeQuiet.app"
 
@@ -21,9 +21,10 @@ cask "bequiet" do
   zap trash: "~/Library/Preferences/cz.nymsa.BeQuiet.plist"
 
   caveats <<~EOS
-    BeQuiet is ad-hoc signed (there is no Apple Developer account behind it).
-    If macOS refuses to open it, reinstall without the quarantine flag:
-      brew reinstall --no-quarantine bequiet
+    BeQuiet is ad-hoc signed (there is no Apple Developer account behind it),
+    so Gatekeeper refuses the first launch. Allow it under System Settings →
+    Privacy & Security → Open Anyway, or clear the quarantine flag:
+      xattr -dr com.apple.quarantine "#{appdir}/BeQuiet.app"
     Browser tabs are paused only after "Allow JavaScript from Apple Events" is
     enabled in Chrome (View → Developer) and Safari (Develop menu).
   EOS
