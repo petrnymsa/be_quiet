@@ -56,8 +56,11 @@ struct StatusPresentation: Hashable {
             // Nothing was playing when the call started: the phase is still
             // `paused` but there is nothing to name.
             if pausedControllerNames.isEmpty {
-                tooltip = "BeQuiet — nothing to pause"
-                statusText = "Nothing to pause"
+                // Naming them separates "the call is on, nothing was playing"
+                // from "BeQuiet missed the call".
+                let users = micProcessNames.isEmpty ? "" : " — microphone in use by \(micProcessNames.list)"
+                tooltip = "BeQuiet — nothing to pause" + users
+                statusText = "Nothing to pause" + users
             } else {
                 tooltip = "BeQuiet — paused: \(pausedControllerNames.list)"
                 statusText = "Paused: \(pausedControllerNames.list)"

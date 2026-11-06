@@ -37,6 +37,22 @@ as active as soon as any process other than BeQuiet reports input.
   (AirPods, USB headset) reports as running while it merely plays audio. It
   serves as a fallback if the process list cannot be read at all.
 
+What starts a pause is a process **joining** the set of microphone users, not
+the microphone being busy. An application that holds the microphone
+permanently — a forgotten Google Meet tab, a virtual machine, macOS's own
+speech daemon — therefore no longer blocks BeQuiet: whatever is already
+capturing when BeQuiet starts (or when the previous call ended) is a baseline
+and never starts a pause cycle. The call is over once the processes that
+started it have let go, however long the others keep holding on.
+
+`com.apple.CoreSpeech`, the always-on speech daemon, is always ignored and
+cannot be unticked.
+
+One consequence: a browser routes every tab through a single audio process. If
+a browser is already capturing for one tab, a call started in a second tab of
+the *same* browser cannot be told apart from the first and will not pause
+anything.
+
 ## Requirements
 
 - macOS 14 (Sonoma) or newer.
@@ -263,6 +279,10 @@ Categories are `mic`, `coordinator`, `player`, `browser` and `app`.
   other than Chrome can be added with
   `BrowserController(bundleID:dialect:)`, but there is no user interface for
   adding them yet.
+- **A browser tab that stops answering is skipped.** Every tab gets 2 seconds
+  to run the script and the whole browser scan gives up after 8, so a wedged
+  renderer — a tab discarded after a long sleep, typically — delays nothing.
+  Media playing in such a tab is simply not paused.
 - **Media started during a call is left alone**, by design: while the
   microphone is active nothing is scanned or paused.
 - **Gatekeeper stops a downloaded build.** The release zip carries no

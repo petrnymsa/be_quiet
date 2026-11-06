@@ -25,7 +25,7 @@ public final class MicMonitor: @unchecked Sendable {
     private var processes: [AudioObjectID: AudioProcessInfo] = [:]
     private var ignoredKeys: Set<String>
     private var processListUnavailable = false
-    private var micActive = false
+    private var activeKeys: Set<String> = []
     private var deviceLevelActive = false
     private var continuation: AsyncStream<MicEvent>.Continuation?
     private var pollTimer: DispatchSourceTimer?
@@ -86,7 +86,7 @@ public final class MicMonitor: @unchecked Sendable {
             }
 
             let baseline = makeSnapshot()
-            micActive = baseline.micActive
+            activeKeys = baseline.activeProcessKeys
             deviceLevelActive = baseline.deviceLevelActive
             updatePolling()
             return self.session
@@ -209,10 +209,13 @@ public final class MicMonitor: @unchecked Sendable {
             emit(.deviceLevelActivityChanged(isActive: deviceLevelActive))
         }
 
-        if snapshot.micActive != micActive {
-            micActive = snapshot.micActive
-            emit(.micActivityChanged(
-                isActive: micActive,
+        // Membership, not the boolean aggregate: a process joining an ongoing
+        // call has to be reported, and a process that never lets go must not
+        // keep the microphone looking busy forever.
+        if snapshot.activeProcessKeys != activeKeys {
+            activeKeys = snapshot.activeProcessKeys
+            emit(.micProcessesChanged(
+                active: activeKeys,
                 reason: snapshot.activityReason,
                 snapshot: snapshot
             ))
@@ -435,7 +438,7 @@ public final class MicMonitor: @unchecked Sendable {
         devices = [:]
         processes = [:]
         processListUnavailable = false
-        micActive = false
+        activeKeys = []
         deviceLevelActive = false
         updatePolling()
 

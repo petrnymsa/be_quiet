@@ -23,8 +23,11 @@ public enum PausePhase: Hashable, Sendable, CustomStringConvertible {
 /// effects out. Everything that can go wrong in this feature can be tested here.
 public struct PauseStateMachine: Hashable, Sendable {
     public enum Event: Hashable, Sendable {
-        case micActive
-        case micInactive
+        /// The processes counting as microphone activity right now.
+        case micProcessesChanged(Set<String>)
+        /// Seeds the baseline without triggering anything (startup, or
+        /// re-enabling).
+        case baselineProcesses(Set<String>)
         case debounceElapsed
         case resumeDelayElapsed
         /// One receipt per controller that actually paused something.
@@ -43,12 +46,23 @@ public struct PauseStateMachine: Hashable, Sendable {
     }
 
     public private(set) var phase: PausePhase = .idle
-    public private(set) var isMicActive = false
     public private(set) var settings: Settings
 
     private var receipts: [PauseReceipt] = []
+    /// The processes reported as holding the microphone, call or not.
+    private var known: Set<String> = []
+    /// The subset of `known` that started the current cycle. Processes already
+    /// holding the microphone when a cycle begins are a baseline and are never
+    /// in here, so they can neither start a call nor keep one alive.
+    private var triggers: Set<String> = []
 
     public var heldReceipts: [PauseReceipt] { receipts }
+
+    public var activeProcesses: Set<String> { known }
+
+    public var triggeringProcesses: Set<String> { triggers }
+
+    public var isMicActive: Bool { !known.isEmpty }
 
     public init(settings: Settings) {
         self.settings = settings
@@ -56,8 +70,8 @@ public struct PauseStateMachine: Hashable, Sendable {
 
     public mutating func handle(_ event: Event) -> [Effect] {
         switch event {
-        case .micActive: micActivityChanged(to: true)
-        case .micInactive: micActivityChanged(to: false)
+        case let .micProcessesChanged(active): processesChanged(to: active)
+        case let .baselineProcesses(active): seedBaseline(active)
         case .debounceElapsed: debounceElapsed()
         case .resumeDelayElapsed: resumeDelayElapsed()
         case let .pauseCompleted(receipts): pauseCompleted(receipts)
@@ -67,33 +81,47 @@ public struct PauseStateMachine: Hashable, Sendable {
 
     // MARK: - Microphone
 
-    private mutating func micActivityChanged(to isActive: Bool) -> [Effect] {
-        guard isMicActive != isActive else { return [] }
-        isMicActive = isActive
-        // Mic state is tracked even while disabled, so re-enabling can act on it.
+    private mutating func seedBaseline(_ active: Set<String>) -> [Effect] {
+        known = active
+        return []
+    }
+
+    private mutating func processesChanged(to new: Set<String>) -> [Effect] {
+        let joined = new.subtracting(known)
+        let left = known.subtracting(new)
+        known = new
+
+        // In `idle` nothing is in flight, so whoever joins now is what started
+        // this cycle; a running cycle only gains and loses members.
+        triggers = phase == .idle ? joined : triggers.subtracting(left).union(joined)
+
+        // Microphone users are tracked even while disabled, so re-enabling
+        // knows the baseline.
         guard settings.isEnabled else { return [] }
 
-        switch (isActive, phase) {
-        case (true, .idle):
+        switch phase {
+        case .idle:
+            guard !triggers.isEmpty else { return [] }
             phase = .arming
             return [.startDebounce(settings.debounceSeconds)]
 
-        case (true, .resumePending):
-            // Reconnect or audio device switch: keep everything paused.
-            phase = .paused
-            return [.cancelResumeDelay]
-
-        case (false, .arming):
+        case .arming where triggers.isEmpty:
             phase = .idle
             return [.cancelDebounce]
 
-        case (false, .paused):
+        case .paused where triggers.isEmpty:
             phase = .resumePending
             return [.startResumeDelay(settings.resumeDelaySeconds)]
 
+        case .resumePending where !triggers.isEmpty:
+            // Reconnect, audio device switch, or a second application joining:
+            // keep everything paused.
+            phase = .paused
+            return [.cancelResumeDelay]
+
         // While pausing the transition is deferred to `.pauseCompleted`, which
-        // reads `isMicActive`.
-        default:
+        // reads `triggers`.
+        case .arming, .pausing, .paused, .resumePending:
             return []
         }
     }
@@ -115,6 +143,8 @@ public struct PauseStateMachine: Hashable, Sendable {
     private mutating func resumeDelayElapsed() -> [Effect] {
         guard phase == .resumePending else { return [] }
         phase = .idle
+        // Whoever is still holding the microphone becomes the next baseline.
+        triggers = []
         guard let held = takeReceipts() else { return [] }
         return [.resume(held)]
     }
@@ -130,7 +160,7 @@ public struct PauseStateMachine: Hashable, Sendable {
         }
 
         receipts = completed
-        guard isMicActive else {
+        guard !triggers.isEmpty else {
             phase = .resumePending
             return [.startResumeDelay(settings.resumeDelaySeconds)]
         }
@@ -164,14 +194,15 @@ public struct PauseStateMachine: Hashable, Sendable {
             effects.append(.resume(held))
         }
         phase = .idle
+        triggers = []
         return effects
     }
 
-    /// An already active microphone counts as a fresh activation.
+    /// Whoever already holds the microphone becomes the baseline: a long-term
+    /// holder must not start a cycle just because BeQuiet was switched on.
     private mutating func enable() -> [Effect] {
-        guard isMicActive else { return [] }
-        phase = .arming
-        return [.startDebounce(settings.debounceSeconds)]
+        triggers = []
+        return []
     }
 
     private mutating func releaseDisabledControllers() -> [Effect] {

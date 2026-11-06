@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.store = store
         self.controllers = controllers
         coordinator = PauseCoordinator(controllers: controllers, settings: settings)
-        monitor = MicMonitor(ignoredProcesses: settings.ignoredProcesses)
+        monitor = MicMonitor(ignoredProcesses: settings.effectiveIgnoredProcesses)
         super.init()
     }
 
@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             micActivity: micActivity,
             store: store,
             onSettingsChanged: { [weak self] settings in
-                self?.monitor.ignoredProcesses = settings.ignoredProcesses
+                self?.monitor.ignoredProcesses = settings.effectiveIgnoredProcesses
             }
         )
 
@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controllers: \(settings.enabledControllers.map(\.rawValue).sorted().joined(separator: ", "), privacy: .public), \
             debounce: \(settings.debounceSeconds, privacy: .public)s, \
             resume delay: \(settings.resumeDelaySeconds, privacy: .public)s, \
-            ignoring: \(settings.ignoredProcesses.sorted().joined(separator: ", "), privacy: .public)
+            ignoring: \(settings.effectiveIgnoredProcesses.sorted().joined(separator: ", "), privacy: .public)
             """
         )
         warmUpControllers()
@@ -92,20 +92,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startMonitoring() {
         let events = monitor.start()
 
-        // `start()` reports transitions only, so the current state is fed in by hand.
+        // `start()` reports transitions only, so the current state is fed in by
+        // hand — as a baseline, so a process that was already capturing when
+        // BeQuiet started never counts as a call.
         let initial = monitor.snapshot()
         micActivity.update(initial)
-        coordinator.micActivityChanged(isActive: initial.micActive)
-        appLogger.notice("initial mic state: \(initial.micActive, privacy: .public)")
+        coordinator.seedBaseline(initial.activeProcessKeys)
+        appLogger.notice(
+            "initial microphone users: \(initial.activeProcessKeys.sorted().joined(separator: ", "), privacy: .public)"
+        )
 
         eventTask = Task { [weak self] in
             for await event in events {
                 guard let self else { return }
                 switch event {
-                case let .micActivityChanged(isActive, reason, snapshot):
-                    appLogger.notice("mic \(isActive, privacy: .public) — \(reason, privacy: .public)")
+                case let .micProcessesChanged(active, reason, snapshot):
+                    appLogger.notice(
+                        "microphone users: \(active.sorted().joined(separator: ", "), privacy: .public) — \(reason, privacy: .public)"
+                    )
                     micActivity.update(snapshot)
-                    coordinator.micActivityChanged(isActive: isActive)
+                    coordinator.micProcessesChanged(active)
 
                 case let .processListChanged(snapshot):
                     micActivity.update(snapshot)

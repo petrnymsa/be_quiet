@@ -83,6 +83,36 @@ struct StatusPresentationTests {
         #expect(presentation.statusText == "Nothing to pause")
     }
 
+    @Test("paused with receipts ignores the microphone users")
+    func pausedWithReceiptsAndMicNames() {
+        let presentation = StatusPresentation(
+            isEnabled: true,
+            phase: .paused,
+            pausedControllerNames: ["Spotify"],
+            micProcessNames: ["Microsoft Teams"]
+        )
+        #expect(presentation.tooltip == "BeQuiet — paused: Spotify")
+        #expect(presentation.statusText == "Paused: Spotify")
+    }
+
+    @Test("paused while nothing was playing names the microphone users")
+    func pausedWithoutReceiptsNamesMicUsers() {
+        let presentation = StatusPresentation(
+            isEnabled: true,
+            phase: .paused,
+            micProcessNames: ["Google Chrome", "Microsoft Teams"]
+        )
+        #expect(presentation.icon == .paused)
+        #expect(
+            presentation.tooltip
+                == "BeQuiet — nothing to pause — microphone in use by Google Chrome, Microsoft Teams"
+        )
+        #expect(
+            presentation.statusText
+                == "Nothing to pause — microphone in use by Google Chrome, Microsoft Teams"
+        )
+    }
+
     @Test("resume pending shows the armed glyph")
     func resumePending() {
         let presentation = StatusPresentation(

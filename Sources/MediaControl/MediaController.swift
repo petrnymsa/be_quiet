@@ -41,17 +41,17 @@ public protocol MediaController: Sendable {
 
     /// Pauses whatever is playing. `nil` means nothing was playing or the
     /// application is not running. Never launches the target application.
-    @MainActor func pauseIfPlaying() async -> PauseReceipt?
+    func pauseIfPlaying() async -> PauseReceipt?
 
     /// Resumes only what the receipt describes, and only if it is still paused.
-    @MainActor func resume(_ receipt: PauseReceipt) async
+    func resume(_ receipt: PauseReceipt) async
 
     /// Called once at startup for enabled controllers: compiles scripts and reads
     /// state so the first pause is fast and the Automation permission prompts
     /// appear at launch rather than mid-call. Must not launch the target app.
-    @MainActor func prepare() async
+    func prepare() async
 }
 
 public extension MediaController {
-    @MainActor func prepare() async {}
+    func prepare() async {}
 }

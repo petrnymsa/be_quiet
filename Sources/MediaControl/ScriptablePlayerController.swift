@@ -32,81 +32,85 @@ public struct ScriptablePlayerController: MediaController {
     public let id: MediaControllerID
     public let displayName: String
     private let bundleID: String
+    private let scripts: Scripts
 
     public init(id: MediaControllerID, displayName: String, bundleID: String) {
         self.id = id
         self.displayName = displayName
         self.bundleID = bundleID
+        scripts = Scripts(bundleID: bundleID)
     }
 
     /// Checked before every script: `tell application` launches its target, and
-    /// BeQuiet must never start a player.
-    @MainActor public var isRunning: Bool {
+    /// BeQuiet must never start a player. Safe off the main thread.
+    public var isRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
     /// `nil` when the player is not running or the state could not be read.
-    @MainActor public func playerState() -> PlayerState? {
-        guard isRunning, let result = run(.playerState) else { return nil }
-        return result.stringValue.flatMap(PlayerState.init(rawValue:))
+    public func playerState() async -> PlayerState? {
+        guard isRunning else { return nil }
+        do {
+            return try await scripts.playerState.execute { $0.stringValue.flatMap(PlayerState.init(rawValue:)) }
+        } catch {
+            log(error)
+            return nil
+        }
     }
 
     /// Compiles the scripts and asks for the player state, which is what
     /// triggers the Automation prompt.
-    @MainActor public func prepare() async {
-        _ = playerState()
+    public func prepare() async {
+        _ = await playerState()
     }
 
-    @MainActor public func pauseIfPlaying() async -> PauseReceipt? {
-        guard playerState() == .playing, run(.pause) != nil else { return nil }
+    public func pauseIfPlaying() async -> PauseReceipt? {
+        guard await playerState() == .playing, await run(scripts.pause) else { return nil }
         return PauseReceipt(controller: id)
     }
 
     /// A user who resumed playback during the call keeps it: only a still paused
     /// player is started again.
-    @MainActor public func resume(_ receipt: PauseReceipt) async {
-        guard receipt.controller == id, playerState() == .paused else { return }
-        _ = run(.play)
+    public func resume(_ receipt: PauseReceipt) async {
+        guard receipt.controller == id, await playerState() == .paused else { return }
+        _ = await run(scripts.play)
     }
 
-    fileprivate enum Command: String {
-        case playerState = "get player state as text"
-        case pause
-        case play
-    }
-
-    @MainActor private func run(_ command: Command) -> NSAppleEventDescriptor? {
+    /// `false` when the command failed, which is already logged.
+    private func run(_ script: AppleScript) async -> Bool {
         do {
-            return try Scripts.script(for: command, bundleID: bundleID).execute()
+            try await script.execute()
+            return true
         } catch {
-            playerLogger.error("\(displayName, privacy: .public): \(error.logMessage, privacy: .public)")
-            return nil
+            log(error)
+            return false
         }
+    }
+
+    private func log(_ error: AppleScriptError) {
+        playerLogger.error("\(displayName, privacy: .public): \(error.logMessage, privacy: .public)")
     }
 }
 
-/// One compiled script per player and command, addressed by bundle ID so the
-/// localised application name does not matter.
-@MainActor
-private enum Scripts {
-    private struct Key: Hashable {
-        let bundleID: String
-        let command: ScriptablePlayerController.Command
-    }
+/// One script per command, built with the controller and addressed by bundle ID
+/// so the localised application name does not matter.
+private struct Scripts {
+    let playerState: AppleScript
+    let pause: AppleScript
+    let play: AppleScript
 
-    private static var compiled: [Key: AppleScript] = [:]
-
-    static func script(for command: ScriptablePlayerController.Command, bundleID: String) -> AppleScript {
-        let key = Key(bundleID: bundleID, command: command)
-        if let existing = compiled[key] { return existing }
-        let script = AppleScript(
-            """
-            tell application id \(AppleScriptLiteral.string(bundleID))
-                \(command.rawValue)
-            end tell
-            """
-        )
-        compiled[key] = script
-        return script
+    init(bundleID: String) {
+        func script(_ command: String) -> AppleScript {
+            AppleScript(
+                """
+                tell application id \(AppleScriptLiteral.string(bundleID))
+                    \(command)
+                end tell
+                """
+            )
+        }
+        playerState = script("get player state as text")
+        pause = script("pause")
+        play = script("play")
     }
 }

@@ -27,10 +27,31 @@ enum AppleScriptError: Error, Hashable {
 /// dictionary from disk, without launching it. Only sending a command launches
 /// the application, which is why callers must check that it is already running.
 ///
-/// `NSAppleScript` is not thread-safe, hence the main actor isolation; it also
-/// keeps every Apple Event this process sends on one thread.
-@MainActor
-final class AppleScript {
+/// Every script of this process is compiled and executed on one private serial
+/// queue, off the main thread: an `execute javascript` round trip into a tab
+/// that stopped answering takes seconds, and on the main actor that froze the
+/// whole menu bar app. `execute` suspends its caller instead of blocking it.
+///
+/// `@unchecked Sendable` because `compiled` and the descriptor an execution
+/// returns never leave `queue` — a confinement the compiler cannot verify, and
+/// the reason callers hand in a `read` closure rather than the descriptor
+/// itself, which is not `Sendable`.
+final class AppleScript: @unchecked Sendable {
+    private static let queue = DispatchQueue(label: "cz.nymsa.BeQuiet.applescript")
+
+    /// AppleScript waits for the reply to a remote send on the Carbon event
+    /// loop, and that only works on a secondary thread once the main thread has
+    /// executed a script itself. Without this the very first execution on
+    /// `queue` never returns — measured, not theory. Any script does, so this
+    /// one is local and sends no Apple Event at all.
+    private static let bootstrap: Void = {
+        let warmUp = {
+            var errorInfo: NSDictionary?
+            _ = NSAppleScript(source: "return 1")?.executeAndReturnError(&errorInfo)
+        }
+        if Thread.isMainThread { warmUp() } else { DispatchQueue.main.sync(execute: warmUp) }
+    }()
+
     private let source: String
     private var compiled: NSAppleScript?
 
@@ -38,7 +59,36 @@ final class AppleScript {
         self.source = source
     }
 
-    func execute() throws(AppleScriptError) -> NSAppleEventDescriptor {
+    /// `read` runs on the queue, on the descriptor the script returned.
+    func execute<T: Sendable>(
+        _ read: @escaping @Sendable (NSAppleEventDescriptor) -> T
+    ) async throws(AppleScriptError) -> T {
+        let outcome: Result<T, AppleScriptError> = await withCheckedContinuation { continuation in
+            Self.queue.async {
+                continuation.resume(returning: self.runCatching(read))
+            }
+        }
+        switch outcome {
+        case let .success(value): return value
+        case let .failure(error): throw error
+        }
+    }
+
+    func execute() async throws(AppleScriptError) {
+        try await execute { _ in }
+    }
+
+    private func runCatching<T>(_ read: (NSAppleEventDescriptor) -> T) -> Result<T, AppleScriptError> {
+        do {
+            let descriptor = try run()
+            return .success(read(descriptor))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func run() throws(AppleScriptError) -> NSAppleEventDescriptor {
+        _ = Self.bootstrap
         let script = try compiledScript()
         var errorInfo: NSDictionary?
         let result = script.executeAndReturnError(&errorInfo)

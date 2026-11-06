@@ -30,15 +30,15 @@ extension Settings {
 }
 
 extension PauseStateMachine {
-    /// Drives the machine into `pausing`.
-    mutating func pauseNow() {
-        _ = handle(.micActive)
+    /// Drives the machine into `pausing`, started by `processes` joining.
+    mutating func pauseNow(triggeredBy processes: Set<String> = ["call"]) {
+        _ = handle(.micProcessesChanged(activeProcesses.union(processes)))
         _ = handle(.debounceElapsed)
     }
 
     /// Drives the machine into `paused`, holding `receipts`.
-    mutating func pause(receipts: [PauseReceipt]) {
-        pauseNow()
+    mutating func pause(receipts: [PauseReceipt], triggeredBy processes: Set<String> = ["call"]) {
+        pauseNow(triggeredBy: processes)
         _ = handle(.pauseCompleted(receipts))
     }
 }

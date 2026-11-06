@@ -12,6 +12,17 @@ public struct Settings: Hashable, Sendable {
         "qemu-system-x86_64-headless",
     ]
 
+    /// macOS speech daemons hold the microphone for the whole session — the
+    /// always-on Siri listener never lets go — so they can never be a call.
+    /// Deliberately not part of `defaultIgnoredProcesses`: `SettingsStore.save`
+    /// writes every key, so an installation whose settings were ever touched
+    /// already has a stored `ignoredProcesses` and would never pick up a new
+    /// default. They are added on top of the stored list instead.
+    public static let builtInIgnoredProcesses: Set<String> = [
+        "com.apple.CoreSpeech",
+        "corespeechd",
+    ]
+
     public var isEnabled = true
     public var debounceSeconds: TimeInterval = 2
     public var resumeDelaySeconds: TimeInterval = 3
@@ -31,6 +42,12 @@ public struct Settings: Hashable, Sendable {
         self.resumeDelaySeconds = resumeDelaySeconds
         self.enabledControllers = enabledControllers
         self.ignoredProcesses = ignoredProcesses
+    }
+
+    /// What the monitor is actually given: the user's list plus the processes
+    /// that are never a call, which the user cannot remove.
+    public var effectiveIgnoredProcesses: Set<String> {
+        ignoredProcesses.union(Settings.builtInIgnoredProcesses)
     }
 }
 

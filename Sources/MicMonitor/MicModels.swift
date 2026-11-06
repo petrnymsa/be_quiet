@@ -74,6 +74,11 @@ public struct AudioProcessInfo: Sendable, Hashable, Identifiable {
     /// the pid as the only handle — too volatile to persist.
     public var identityKey: String? { bundleID ?? executableName }
 
+    /// How the pause logic tells this process apart from the others holding the
+    /// microphone. Unlike `identityKey` it always exists: a process with no
+    /// identity still has to be distinguishable for the duration of one call.
+    public var trackingKey: String { identityKey ?? "pid:\(pid)" }
+
     /// Bundle IDs are missing for daemons and command line tools.
     public var displayName: String { bundleID ?? executableName ?? "<pid \(pid)>" }
 }
@@ -119,6 +124,10 @@ public struct MicSnapshot: Sendable, Hashable {
         processes.filter { $0.isRunningInput && isIgnored($0) }
     }
 
+    /// The tracking keys of `activeProcesses` — what the pause logic compares
+    /// between snapshots to see who joined a call and who left it.
+    public var activeProcessKeys: Set<String> { Set(activeProcesses.map(\.trackingKey)) }
+
     public var processesWithAudioIO: [AudioProcessInfo] { processes.filter(\.hasAudioIO) }
 
     public func isIgnored(_ process: AudioProcessInfo) -> Bool {
@@ -156,8 +165,11 @@ public enum MicEvent: Sendable {
     case processListChanged(MicSnapshot)
     /// One process changed its input and/or output running flag.
     case processRunningChanged(AudioProcessInfo)
-    case micActivityChanged(isActive: Bool, reason: String, snapshot: MicSnapshot)
-    /// Reported separately from `micActivityChanged` so both aggregates can be
+    /// The set of processes counting as microphone activity changed. Emitted on
+    /// every membership change, not only when the set turns empty or non-empty,
+    /// so an application joining an ongoing call is reported too.
+    case micProcessesChanged(active: Set<String>, reason: String, snapshot: MicSnapshot)
+    /// Reported separately from `micProcessesChanged` so both aggregates can be
     /// compared while the truth rule is being validated.
     case deviceLevelActivityChanged(isActive: Bool)
 }

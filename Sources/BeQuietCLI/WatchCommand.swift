@@ -13,7 +13,7 @@ enum WatchCommand {
             exit(2)
         }
 
-        let ignored = SettingsStore().load().ignoredProcesses.union(overrides)
+        let ignored = SettingsStore().load().effectiveIgnoredProcesses.union(overrides)
         let monitor = MicMonitor(ignoredProcesses: ignored)
         let events = monitor.start()
         let interrupts = Interrupts.install { monitor.stop() }
@@ -58,9 +58,13 @@ enum WatchCommand {
                         + (inputDevices.isEmpty ? "" : "  inputDevices=[\(inputDevices.joined(separator: ", "))]")
                 )
 
-            case let .micActivityChanged(isActive, reason, _):
-                let status = isActive ? "ACTIVE" : "INACTIVE"
-                Output.event("MIC", "\(status.padded(to: 8)) reason: \(reason)")
+            case let .micProcessesChanged(active, reason, _):
+                let status = active.isEmpty ? "INACTIVE" : "ACTIVE"
+                let users = active.sorted().joined(separator: ", ")
+                Output.event(
+                    "MIC",
+                    "\(status.padded(to: 8)) \(users.isEmpty ? "" : "\(users)  ")reason: \(reason)"
+                )
 
             case let .deviceLevelActivityChanged(isActive):
                 Output.event("DEVICE-LEVEL", "active=\(flag(isActive))")

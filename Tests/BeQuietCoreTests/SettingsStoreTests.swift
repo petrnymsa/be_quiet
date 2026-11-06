@@ -52,4 +52,28 @@ struct SettingsStoreTests {
         defaults.removeObject(forKey: "ignoredProcesses")
         #expect(store.load().ignoredProcesses == Settings.defaultIgnoredProcesses)
     }
+
+    @Test("the built-in ignore list applies to a store that already has a saved list")
+    func builtInsApplyToASavedList() throws {
+        let suiteName = "cz.nymsa.BeQuiet.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = SettingsStore(defaults: defaults)
+        store.save(Settings(ignoredProcesses: ["com.utmapp.UTM"]))
+
+        let loaded = store.load()
+        #expect(loaded.ignoredProcesses == ["com.utmapp.UTM"])
+        #expect(loaded.effectiveIgnoredProcesses
+            == Settings.builtInIgnoredProcesses.union(["com.utmapp.UTM"]))
+        #expect(loaded.effectiveIgnoredProcesses.contains("com.apple.CoreSpeech"))
+        // The built-ins are applied, never written back.
+        #expect(defaults.stringArray(forKey: "ignoredProcesses") == ["com.utmapp.UTM"])
+    }
+
+    @Test("the built-in ignore list survives a cleared ignore list")
+    func builtInsSurviveAClearedList() {
+        #expect(Settings(ignoredProcesses: []).effectiveIgnoredProcesses
+            == Settings.builtInIgnoredProcesses)
+    }
 }

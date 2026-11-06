@@ -35,26 +35,26 @@ enum ControllerCommand {
     private static func check(_ controller: any InspectableController) async {
         Output.line("controller:  \(controller.displayName) (\(controller.id))")
         Output.line("running:     \(controller.isRunning ? "yes" : "no")")
-        printState(of: controller)
+        await printState(of: controller)
 
         guard let receipt = await controller.pauseIfPlaying() else {
             Output.line("pause:       nothing to pause")
             return
         }
         Output.line("pause:       receipt \(receipt.controller) items=\(receipt.items)")
-        printState(of: controller)
+        await printState(of: controller)
 
         Output.line("waiting 3 s before resuming")
         try? await Task.sleep(for: .seconds(3))
 
         await controller.resume(receipt)
         Output.line("resume:      done")
-        printState(of: controller)
+        await printState(of: controller)
     }
 
     @MainActor
-    private static func printState(of controller: any InspectableController) {
-        guard let state = controller.stateDescription else { return }
+    private static func printState(of controller: any InspectableController) async {
+        guard let state = await controller.stateDescription else { return }
         Output.line("state:       \(state)")
     }
 }
@@ -63,24 +63,28 @@ enum ControllerCommand {
 /// `MediaController`; this keeps the command generic without widening the
 /// protocol every controller has to satisfy.
 private protocol InspectableController: MediaController {
-    @MainActor var isRunning: Bool { get }
+    var isRunning: Bool { get }
     /// `nil` for controllers with no single state to report, such as a browser
     /// with any number of tabs.
-    @MainActor var stateDescription: String? { get }
+    var stateDescription: String? { get async }
 }
 
 extension ScriptablePlayerController: InspectableController {
-    var stateDescription: String? { playerState()?.description ?? "unknown" }
+    var stateDescription: String? {
+        get async { await playerState()?.description ?? "unknown" }
+    }
 }
 
 extension BrowserController: InspectableController {
     var stateDescription: String? {
-        switch javaScriptAccess() {
-        case .available: "JavaScript from Apple Events enabled"
-        case .disabled: "JavaScript from Apple Events DISABLED — \(javaScriptDisabledHint)"
-        case .noScriptableTab: "no http(s) tab open to probe"
-        case let .failed(message): "probe failed: \(message)"
-        case .browserNotRunning: nil
+        get async {
+            switch await javaScriptAccess() {
+            case .available: "JavaScript from Apple Events enabled"
+            case .disabled: "JavaScript from Apple Events DISABLED — \(javaScriptDisabledHint)"
+            case .noScriptableTab: "no http(s) tab open to probe"
+            case let .failed(message): "probe failed: \(message)"
+            case .browserNotRunning: nil
+            }
         }
     }
 }

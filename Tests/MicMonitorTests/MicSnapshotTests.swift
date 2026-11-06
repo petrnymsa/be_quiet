@@ -107,6 +107,18 @@ struct MicSnapshotTests {
         #expect(unnamed.displayName == "<pid 40>")
     }
 
+    @Test("the tracking keys name every process counting as activity")
+    func activeProcessKeys() {
+        let unnamed = makeProcess(pid: 40, bundleID: nil, executableName: nil, isRunningInput: true)
+        let snapshot = makeSnapshot(
+            processes: [emulator, teams, unnamed, spotify],
+            ignoredProcesses: ["qemu-system-aarch64"]
+        )
+        #expect(snapshot.activeProcessKeys == ["com.microsoft.teams2", "pid:40"])
+        #expect(teams.trackingKey == "com.microsoft.teams2")
+        #expect(unnamed.trackingKey == "pid:40")
+    }
+
     @Test("a process without an identity is never ignored")
     func processWithoutIdentity() {
         let unnamed = makeProcess(pid: 40, bundleID: nil, executableName: nil, isRunningInput: true)

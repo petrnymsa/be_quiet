@@ -21,6 +21,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
+    /// Last known answer per browser; see `refreshBrowserScripting()`.
+    private var browserScripting: [MediaControllerID: BrowserJavaScriptAccess] = [:]
 
     init(
         coordinator: PauseCoordinator,
@@ -43,6 +45,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         statusItem.menu = menu
 
         observe { [weak self] in self?.refreshStatusItem() }
+        refreshBrowserScripting()
     }
 
     // MARK: - Status item
@@ -62,8 +65,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func observe(_ apply: @escaping @MainActor @Sendable () -> Void) {
         withObservationTracking {
             apply()
-        } onChange: {
-            Task { @MainActor [weak self] in
+        } onChange: { [weak self] in
+            Task { @MainActor in
                 self?.observe(apply)
             }
         }
@@ -137,22 +140,42 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit BeQuiet", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+
+        refreshBrowserScripting()
     }
 
     /// A browser refusing JavaScript from Apple Events is the setup step users
-    /// forget; without this it only shows as tabs that never pause. Probed
-    /// while the menu opens — never on a timer, and never for a browser the
-    /// user switched off, which would prompt for Automation access for nothing.
+    /// forget; without this it only shows as tabs that never pause.
     private func javaScriptWarning(for controller: any MediaController) -> NSMenuItem? {
         guard let browser = controller as? BrowserController,
               coordinator.settings.enabledControllers.contains(browser.id),
-              case .disabled = browser.javaScriptAccess()
+              case .disabled? = browserScripting[browser.id]
         else { return nil }
 
         let item = deadItem("⚠︎ Allow JavaScript from Apple Events is off in \(browser.displayName)")
         item.indentationLevel = 1
         item.toolTip = browser.javaScriptDisabledHint
         return item
+    }
+
+    /// The probe sends an Apple Event, which `menuNeedsUpdate` cannot wait for,
+    /// so the menu renders the last answer and this refreshes it for the next
+    /// open. A first open before any answer arrived therefore shows no warning.
+    ///
+    /// Never on a timer, and never for a browser the user switched off, which
+    /// would prompt for Automation access for nothing.
+    private func refreshBrowserScripting() {
+        let browsers = controllers
+            .compactMap { $0 as? BrowserController }
+            .filter { coordinator.settings.enabledControllers.contains($0.id) }
+
+        Task { [weak self] in
+            var access: [MediaControllerID: BrowserJavaScriptAccess] = [:]
+            for browser in browsers {
+                access[browser.id] = await browser.javaScriptAccess()
+            }
+            self?.browserScripting = access
+        }
     }
 
     /// The ignore list, built around what is holding the microphone right now:
@@ -173,6 +196,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                     submenu.addItem(deadItem(user.displayName))
                     continue
                 }
+                guard !Settings.builtInIgnoredProcesses.contains(key) else {
+                    submenu.addItem(deadItem("\(user.displayName) (always ignored)"))
+                    continue
+                }
                 submenu.addItem(
                     checkbox(
                         user.displayName,
@@ -185,6 +212,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
 
         let inactive = settings.ignoredProcesses
+            .subtracting(Settings.builtInIgnoredProcesses)
             .subtracting(users.compactMap(\.identityKey))
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         if !inactive.isEmpty {

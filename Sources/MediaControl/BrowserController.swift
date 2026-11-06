@@ -33,6 +33,7 @@ public struct BrowserController: MediaController {
 
     private let bundleID: String
     private let dialect: BrowserDialect
+    private let scripts: Scripts
 
     public let id: MediaControllerID
     public let displayName: String
@@ -45,32 +46,33 @@ public struct BrowserController: MediaController {
         case .safari: .safari
         }
         displayName = Self.displayNames[bundleID] ?? bundleID
+        scripts = Scripts(bundleID: bundleID, dialect: dialect)
     }
 
     /// Checked before every script: `tell application` launches its target, and
-    /// BeQuiet must never start a browser.
-    @MainActor public var isRunning: Bool {
+    /// BeQuiet must never start a browser. Safe off the main thread.
+    public var isRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
     /// Probes the browser, which compiles the scripts and triggers the
     /// Automation prompt.
-    @MainActor public func prepare() async {
-        _ = javaScriptAccess()
+    public func prepare() async {
+        _ = await javaScriptAccess()
     }
 
-    @MainActor public func pauseIfPlaying() async -> PauseReceipt? {
+    public func pauseIfPlaying() async -> PauseReceipt? {
         guard isRunning else { return nil }
 
-        let result: NSAppleEventDescriptor
+        let result: BrowserPauseResult
         do {
-            result = try Scripts.pause(bundleID: bundleID, dialect: dialect).execute()
+            result = try await scripts.pause.execute { BrowserPauseResult($0) }
         } catch {
             browserLogger.error("\(self.displayName, privacy: .public) pause: \(error.logMessage, privacy: .public)")
             return nil
         }
 
-        switch BrowserPauseResult(result) {
+        switch result {
         case let .javaScriptDisabled(message):
             let refusal = "\(message) — \(javaScriptDisabledHint)"
             browserLogger.error("\(self.displayName, privacy: .public) pause: \(refusal, privacy: .public)")
@@ -85,10 +87,10 @@ public struct BrowserController: MediaController {
     /// The one setting users must switch on by hand, probed with a no-op script
     /// in the first http(s) tab so the problem can be shown before the first
     /// call instead of surfacing as a silent "nothing to pause".
-    @MainActor public func javaScriptAccess() -> BrowserJavaScriptAccess {
+    public func javaScriptAccess() async -> BrowserJavaScriptAccess {
         guard isRunning else { return .browserNotRunning }
         do {
-            return BrowserJavaScriptAccess(try Scripts.probe(bundleID: bundleID, dialect: dialect).execute())
+            return try await scripts.probe.execute { BrowserJavaScriptAccess($0) }
         } catch {
             return .failed(message: error.logMessage)
         }
@@ -111,11 +113,11 @@ public struct BrowserController: MediaController {
     /// position, which shifts as soon as tabs are closed or reordered. Resume
     /// therefore visits the http(s) tabs again and lets the marker decide,
     /// which makes the receipt items pure logging material.
-    @MainActor public func resume(_ receipt: PauseReceipt) async {
+    public func resume(_ receipt: PauseReceipt) async {
         guard receipt.controller == id, isRunning else { return }
 
         do {
-            _ = try Scripts.resume(bundleID: bundleID, dialect: dialect).execute()
+            try await scripts.resume.execute()
         } catch {
             browserLogger.error("\(self.displayName, privacy: .public) resume: \(error.logMessage, privacy: .public)")
         }
@@ -239,23 +241,37 @@ extension BrowserDialect {
 /// reports as `missing value`. The `try` per window covers windows without tabs
 /// at all.
 enum BrowserScriptSource {
+    /// Per tab, because a renderer that stopped answering — a tab discarded
+    /// after a long sleep above all — otherwise holds the scan for the default
+    /// Apple Event timeout, which is minutes.
+    static let tabTimeoutSeconds = 2
+    /// And so that a browser full of such tabs cannot add up to the same stall.
+    static let scanBudgetSeconds = 8
+    /// The tab did not answer in time. It is skipped — unlike the refusal
+    /// below it says nothing about the browser's settings.
+    static let timedOutErrorNumber = Int(errAETimeout)
+
     static func pause(bundleID: String, dialect: BrowserDialect) -> String {
         """
         tell application id \(AppleScriptLiteral.string(bundleID))
             set hits to {}
+            set scanStart to current date
             repeat with winRef in every window
                 try
                     repeat with tabRef in every tab of winRef
+                        if (current date) - scanStart > \(scanBudgetSeconds) then exit repeat
                         try
                             set urlText to URL of tabRef
                             if urlText is not missing value and urlText starts with "http" then
-                                set outcome to (\(dialect.evaluate(JavaScript.pause))) as text
+                                with timeout of \(tabTimeoutSeconds) seconds
+                                    set outcome to (\(dialect.evaluate(JavaScript.pause))) as text
+                                end timeout
                                 if outcome is "1" then
                                     set end of hits to \(dialect.tabHint)
                                 end if
                             end if
                         on error errMsg number errNum
-                            if errMsg contains \(AppleScriptLiteral.string(dialect.javaScriptDisabledMessage)) then
+                            if errNum is not \(timedOutErrorNumber) and errMsg contains \(AppleScriptLiteral.string(dialect.javaScriptDisabledMessage)) then
                                 return {\(AppleScriptLiteral.string(BrowserPauseResult.errorMarker)), errMsg}
                             end if
                         end try
@@ -272,13 +288,17 @@ enum BrowserScriptSource {
     static func resume(bundleID: String, dialect: BrowserDialect) -> String {
         """
         tell application id \(AppleScriptLiteral.string(bundleID))
+            set scanStart to current date
             repeat with winRef in every window
                 try
                     repeat with tabRef in every tab of winRef
+                        if (current date) - scanStart > \(scanBudgetSeconds) then exit repeat
                         try
                             set urlText to URL of tabRef
                             if urlText is not missing value and urlText starts with "http" then
-                                \(dialect.evaluate(JavaScript.resume))
+                                with timeout of \(tabTimeoutSeconds) seconds
+                                    \(dialect.evaluate(JavaScript.resume))
+                                end timeout
                             end if
                         end try
                     end repeat
@@ -291,16 +311,20 @@ enum BrowserScriptSource {
     static func probe(bundleID: String, dialect: BrowserDialect) -> String {
         """
         tell application id \(AppleScriptLiteral.string(bundleID))
+            set scanStart to current date
             repeat with winRef in every window
                 try
                     repeat with tabRef in every tab of winRef
+                        if (current date) - scanStart > \(scanBudgetSeconds) then exit repeat
                         set urlText to URL of tabRef
                         if urlText is not missing value and urlText starts with "http" then
                             try
-                                \(dialect.evaluate("1"))
+                                with timeout of \(tabTimeoutSeconds) seconds
+                                    \(dialect.evaluate("1"))
+                                end timeout
                                 return \(AppleScriptLiteral.string(BrowserJavaScriptAccess.availableMarker))
                             on error errMsg number errNum
-                                if errMsg contains \(AppleScriptLiteral.string(dialect.javaScriptDisabledMessage)) then
+                                if errNum is not \(timedOutErrorNumber) and errMsg contains \(AppleScriptLiteral.string(dialect.javaScriptDisabledMessage)) then
                                     return {\(AppleScriptLiteral.string(BrowserPauseResult.errorMarker)), errMsg}
                                 end if
                             end try
@@ -314,28 +338,16 @@ enum BrowserScriptSource {
     }
 }
 
-@MainActor
-private enum Scripts {
-    private static var pauseScripts: [String: AppleScript] = [:]
-    private static var resumeScripts: [String: AppleScript] = [:]
+/// One script per phase, built with the controller: compilation is the
+/// expensive part and neither source ever changes.
+private struct Scripts {
+    let pause: AppleScript
+    let resume: AppleScript
+    let probe: AppleScript
 
-    /// One script per browser and phase, compiled on first use: compilation is
-    /// the expensive part and neither source ever changes.
-    static func pause(bundleID: String, dialect: BrowserDialect) -> AppleScript {
-        if let existing = pauseScripts[bundleID] { return existing }
-        let script = AppleScript(BrowserScriptSource.pause(bundleID: bundleID, dialect: dialect))
-        pauseScripts[bundleID] = script
-        return script
-    }
-
-    static func resume(bundleID: String, dialect: BrowserDialect) -> AppleScript {
-        if let existing = resumeScripts[bundleID] { return existing }
-        let script = AppleScript(BrowserScriptSource.resume(bundleID: bundleID, dialect: dialect))
-        resumeScripts[bundleID] = script
-        return script
-    }
-
-    static func probe(bundleID: String, dialect: BrowserDialect) -> AppleScript {
-        AppleScript(BrowserScriptSource.probe(bundleID: bundleID, dialect: dialect))
+    init(bundleID: String, dialect: BrowserDialect) {
+        pause = AppleScript(BrowserScriptSource.pause(bundleID: bundleID, dialect: dialect))
+        resume = AppleScript(BrowserScriptSource.resume(bundleID: bundleID, dialect: dialect))
+        probe = AppleScript(BrowserScriptSource.probe(bundleID: bundleID, dialect: dialect))
     }
 }

@@ -45,15 +45,21 @@ public final class PauseCoordinator {
     }
 
     /// Feed from any mic source. Idempotent.
-    public func micActivityChanged(isActive: Bool) {
-        handle(isActive ? .micActive : .micInactive)
+    public func micProcessesChanged(_ active: Set<String>) {
+        handle(.micProcessesChanged(active))
+    }
+
+    /// Takes the processes already holding the microphone as the baseline, so
+    /// none of them starts a pause cycle.
+    public func seedBaseline(_ active: Set<String>) {
+        handle(.baselineProcesses(active))
     }
 
     /// Consumes `MicMonitor` events until the stream ends.
     public func run(_ events: AsyncStream<MicEvent>) async {
         for await event in events {
-            guard case let .micActivityChanged(isActive, _, _) = event else { continue }
-            micActivityChanged(isActive: isActive)
+            guard case let .micProcessesChanged(active, _, _) = event else { continue }
+            micProcessesChanged(active)
         }
     }
 
@@ -76,6 +82,7 @@ public final class PauseCoordinator {
         guard !isShutDown else { return }
 
         let previous = machine.phase
+        let previousProcesses = machine.activeProcesses
         let effects = machine.handle(event)
         phase = machine.phase
         isMicActive = machine.isMicActive
@@ -83,7 +90,10 @@ public final class PauseCoordinator {
 
         if previous != machine.phase {
             coordinatorLogger.notice(
-                "\(previous, privacy: .public) → \(self.machine.phase, privacy: .public) (\(event.reason, privacy: .public))"
+                """
+                \(previous, privacy: .public) → \(self.machine.phase, privacy: .public) \
+                (\(event.reason(since: previousProcesses), privacy: .public))
+                """
             )
             onTransition?(previous, machine.phase)
         }
@@ -149,14 +159,27 @@ public final class PauseCoordinator {
 }
 
 private extension PauseStateMachine.Event {
-    var reason: String {
+    /// Naming who joined and who left is the whole diagnosis when a pause does
+    /// not happen, so the keys go into the log, not just "processes changed".
+    func reason(since previous: Set<String>) -> String {
         switch self {
-        case .micActive: "mic active"
-        case .micInactive: "mic inactive"
-        case .debounceElapsed: "debounce elapsed"
-        case .resumeDelayElapsed: "resume delay elapsed"
-        case let .pauseCompleted(receipts): "paused \(receipts.count) controller(s)"
-        case .settingsChanged: "settings changed"
+        case let .micProcessesChanged(active):
+            let changes = [
+                Self.list("joined", active.subtracting(previous)),
+                Self.list("left", previous.subtracting(active)),
+            ].compactMap { $0 }
+            return changes.isEmpty ? "microphone users unchanged" : changes.joined(separator: ", ")
+        case let .baselineProcesses(active):
+            return Self.list("baseline", active) ?? "baseline: nothing holds the microphone"
+        case .debounceElapsed: return "debounce elapsed"
+        case .resumeDelayElapsed: return "resume delay elapsed"
+        case let .pauseCompleted(receipts): return "paused \(receipts.count) controller(s)"
+        case .settingsChanged: return "settings changed"
         }
+    }
+
+    static func list(_ label: String, _ keys: Set<String>) -> String? {
+        guard !keys.isEmpty else { return nil }
+        return "\(label): \(keys.sorted().joined(separator: ", "))"
     }
 }

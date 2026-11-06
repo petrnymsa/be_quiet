@@ -85,6 +85,28 @@ struct BrowserScriptSourceTests {
         #expect(source.contains("id of tabRef"))
     }
 
+    /// One wedged tab cost 7.9 s in the field; both numbers come from Swift so
+    /// they stay one definition.
+    @Test("every tab is evaluated under a timeout, inside a scan budget", arguments: [BrowserDialect.chromium, .safari])
+    func tabTimeoutAndScanBudget(dialect: BrowserDialect) {
+        let source = BrowserScriptSource.pause(bundleID: "com.example.Browser", dialect: dialect)
+        #expect(BrowserScriptSource.tabTimeoutSeconds == 2)
+        #expect(BrowserScriptSource.scanBudgetSeconds == 8)
+        #expect(source.contains("with timeout of 2 seconds"))
+        #expect(source.contains("end timeout"))
+        #expect(source.contains("set scanStart to current date"))
+        #expect(source.contains("if (current date) - scanStart > 8 then exit repeat"))
+    }
+
+    /// A timed-out tab must be skipped, never reported as the refusal the user
+    /// has to fix by hand.
+    @Test("a timed-out tab is told apart from the refusal", arguments: [BrowserDialect.chromium, .safari])
+    func timedOutTabIsSkipped(dialect: BrowserDialect) {
+        let source = BrowserScriptSource.pause(bundleID: "com.example.Browser", dialect: dialect)
+        #expect(BrowserScriptSource.timedOutErrorNumber == -1712)
+        #expect(source.contains("if errNum is not -1712 and errMsg contains"))
+    }
+
     /// Resume finds its elements by the marker, so no tab may appear in it.
     @Test("resume addresses no tab", arguments: [BrowserDialect.chromium, .safari])
     func resumeScansEveryTab(dialect: BrowserDialect) {

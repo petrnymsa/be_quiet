@@ -109,8 +109,53 @@ Other requirements:
   mutable state outside that queue.
 - Public API: `MicMonitor.events: AsyncStream<MicEvent>` plus a `snapshot()`
   describing devices and processes. `MicEvent` carries
-  `micActive(Bool, reason: String)` transitions and the raw device/process
-  changes for logging.
+  `micProcessesChanged(active: Set<String>, reason: String, …)` — the identity
+  keys of everything counting as activity, emitted on every membership change —
+  and the raw device/process changes for logging.
+
+**macOS 27 regression (diagnosed 2026-11-06).** The aggregate rule above —
+"the microphone is active iff any non-ignored process reports input" — breaks
+as soon as something holds the microphone permanently. Two such holders were
+found on the reporter's machine:
+
+- `com.apple.CoreSpeech`, the always-on speech daemon, keeps
+  `kAudioProcessPropertyIsRunningInput == 1` for the whole session.
+- `com.google.Chrome.helper` (Chrome's `audio.mojom.AudioService`) keeps it
+  while any tab holds live microphone access — a forgotten Google Meet tab is
+  enough.
+
+With the aggregate stuck at true the coordinator entered `paused` and never
+left: in that phase nothing is scanned or paused, so a later Teams call did
+nothing at all. The app had been wedged that way for hours while appearing to
+run normally.
+
+The fix is to drive the state machine by *which* processes are capturing. A
+cycle starts when a process **joins** the active set and ends when the
+processes that started it leave; anything already capturing is a baseline and
+never triggers. A permanent holder is then simply part of the background.
+Known consequence: a browser multiplexes every tab through one audio process,
+so a call started in a second tab of a browser that is already capturing
+cannot be distinguished and will not pause.
+
+The same diagnosis explained the "app stops responding" half of the report:
+the browser tab scan ran synchronously on the main actor, and two
+`execute javascript` round trips into tabs discarded over night took 4.9 s and
+7.9 s of a 14.3 s freeze (the other 27 Apple Events took ~10 ms each). Apple
+Events therefore move off the main thread onto one dedicated serial queue, and
+each per-tab evaluation gets an AppleScript `with timeout` so one wedged
+renderer cannot stall the scan. Measured afterwards: during a Chrome scan the
+worst main-queue stall is single-digit milliseconds, against the 14.3 s freeze
+before.
+
+One caveat belongs with that queue. A reused compiled `NSAppleScript` executes
+reliably on it, but a *first* execution of the process going straight to the
+queue was observed to hang: AppleScript waits for the remote send's reply on
+the Carbon event loop, which a secondary thread cannot service until the main
+thread has initialised it. It did not reproduce in every configuration, so the
+cause is not fully pinned down; `AppleScript` therefore runs one trivial local
+script (`return 1`, no Apple Event) on the main thread once before its first
+send. It costs tens of milliseconds at startup and removes the failure mode
+whether or not it was going to occur.
 
 **Ignored processes.** Some processes hold the microphone without any call:
 the Android Emulator (`qemu-system-aarch64`, confirmed — it paused music on
@@ -122,6 +167,12 @@ snapshot still reports them as `ignoredActiveProcesses` for the UI. The menu's
 *Ignored apps* submenu lists whatever is using the microphone right now with a
 checkbox per process, so the fix for a new offender is one click. The Android
 Emulator is ignored by default.
+
+Settings also carry a built-in set (`Settings.builtInIgnoredProcesses`) that is
+always applied and cannot be unticked: macOS speech daemons belong there. It is
+deliberately separate from `defaultIgnoredProcesses`, because `SettingsStore`
+writes every key on any settings change — an install whose settings were ever
+touched has a stored `ignoredProcesses` and would never pick up a new default.
 
 Virtual *devices* (Microsoft Teams Audio, BlackHole, Loopback) turned out not
 to matter: the process rule ignores devices altogether, so no device ignore
@@ -195,7 +246,27 @@ Known limitation: `play()` from an Apple Event may be blocked by the browser's
 autoplay policy on pages without prior user activation. Documented, not
 worked around.
 
-`NSAppleScript` is not thread-safe; all AppleScript runs on the main actor.
+**Off the main thread.** Every Apple Event this process sends is compiled and
+executed on one private serial queue (`cz.nymsa.BeQuiet.applescript`), which is
+the confinement that replaces the main actor — `NSAppleScript` is still not
+thread-safe — and the controllers became plain `async`. The reason is measured:
+one pause took 14.3 s with the menu bar app unresponsive throughout, because two
+`execute javascript` round trips into tabs discarded over night cost 4.9 s and
+7.9 s while the other 27 Apple Events of that scan took ~10 ms each. The same
+scan now costs the main queue a few milliseconds, low tens at worst. One catch found the
+hard way: AppleScript waits for the reply to a remote send on the Carbon event
+loop, which on a secondary thread only works once the main thread has run a
+script itself, so `AppleScript` executes one trivial local script on the main
+thread before its first send — without it that first send never returns.
+
+Two limits keep one browser from stalling a scan: every per-tab evaluation runs
+inside `with timeout of 2 seconds`, and the loop stops once 8 seconds have
+passed since the `current date` taken before it. A timed-out tab raises error
+-1712 and is skipped, told apart explicitly from the *Allow JavaScript from
+Apple Events* refusal, which must still surface. Media in a wedged tab is simply
+not paused. The probe is asynchronous too, so the menu renders the last answer
+it has and refreshes it for the next open.
+
 Apple Events to other apps need `NSAppleEventsUsageDescription` in Info.plist
 and trigger a one-time Automation permission prompt per target app.
 
@@ -204,9 +275,9 @@ and trigger a one-time Automation permission prompt per target app.
 Split in two for testability:
 
 - `PauseStateMachine` — a pure value type: `handle(event) -> [Effect]`. No
-  async, no timers, no I/O. Events: `micActive`, `micInactive`,
-  `debounceElapsed`, `resumeDelayElapsed`, `pauseCompleted([PauseReceipt])`,
-  `settingsChanged(Settings)`. Effects: `startDebounce`/`cancelDebounce`,
+  async, no timers, no I/O. Events: `micProcessesChanged(Set<String>)`,
+  `baselineProcesses(Set<String>)`, `debounceElapsed`, `resumeDelayElapsed`,
+  `pauseCompleted([PauseReceipt])`, `settingsChanged(Settings)`. Effects: `startDebounce`/`cancelDebounce`,
   `startResumeDelay`/`cancelResumeDelay`, `pause(Set<MediaControllerID>)`,
   `resume([PauseReceipt])`. All timing and bookkeeping rules below are unit
   tests against this type.
@@ -217,18 +288,23 @@ Split in two for testability:
   `heldReceipts` for the UI.
 
 ```
-idle ──mic on──▶ arming            start debounce timer (default 2 s)
-arming ──mic off──▶ idle           short burst, ignored
+idle ──join──▶ arming              start debounce timer (default 2 s);
+                                   the joined processes become the triggers
+arming ──triggers gone──▶ idle     short burst, ignored
 arming ──timer──▶ pausing          pauseIfPlaying() on every enabled controller
 pausing ──completed──▶ paused      store the receipts (→ resumePending directly
-                                   if the mic already went off meanwhile)
-paused ──mic off──▶ resumePending  start resume timer (default 3 s)
-resumePending ──mic on──▶ paused   reconnect / device switch: cancel timer, keep receipts
+                                   if the triggers already left meanwhile)
+paused ──triggers gone──▶ resumePending  start resume timer (default 3 s)
+resumePending ──join──▶ paused     reconnect / device switch / a second app:
+                                   cancel timer, keep receipts
 resumePending ──timer──▶ idle      resume(receipt) for each stored receipt, clear them
 ```
 
 Rules:
 
+- Only the processes that joined the active set start a cycle, and the cycle
+  ends when those have let go. Everything already capturing is a baseline, so a
+  permanent holder neither starts a pause nor keeps one alive.
 - Nothing is scanned or paused while in `paused`; media the user starts during
   a call is never touched.
 - Controllers that returned `nil` from `pauseIfPlaying()` are not resumed

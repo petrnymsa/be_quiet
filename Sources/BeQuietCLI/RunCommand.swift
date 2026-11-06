@@ -17,7 +17,7 @@ enum RunCommand {
         if let seconds = overrides.resumeDelaySeconds { settings.resumeDelaySeconds = seconds }
         settings.ignoredProcesses.formUnion(ignoreOverrides)
 
-        let monitor = MicMonitor(ignoredProcesses: settings.ignoredProcesses)
+        let monitor = MicMonitor(ignoredProcesses: settings.effectiveIgnoredProcesses)
         let events = monitor.start()
         let interrupts = Interrupts.install { monitor.stop() }
 
@@ -41,20 +41,20 @@ enum RunCommand {
                 + "debounce: \(settings.debounceSeconds)s  resume delay: \(settings.resumeDelaySeconds)s  "
                 + "enabled: \(flag(settings.isEnabled))"
         )
-        if let line = IgnoreOption.headerLine(settings.ignoredProcesses) { Output.line(line) }
+        if let line = IgnoreOption.headerLine(settings.effectiveIgnoredProcesses) { Output.line(line) }
         let initial = monitor.snapshot()
         Output.line(initial.aggregatesLine)
-        warnAboutBrowserScripting(controllers, enabled: settings.enabledControllers)
+        await warnAboutBrowserScripting(controllers, enabled: settings.enabledControllers)
         Output.line()
 
-        // `start()` reports transitions only, so the current state is fed in by hand.
-        coordinator.micActivityChanged(isActive: initial.micActive)
+        // Whoever already holds the microphone is the baseline, never a call.
+        coordinator.seedBaseline(initial.activeProcessKeys)
 
         for await event in events {
-            guard case let .micActivityChanged(isActive, _, snapshot) = event else { continue }
-            let status = isActive ? "ACTIVE" : "INACTIVE"
+            guard case let .micProcessesChanged(active, _, snapshot) = event else { continue }
+            let status = active.isEmpty ? "INACTIVE" : "ACTIVE"
             Output.event("MIC", "\(status.padded(to: 8)) \(snapshot.activeProcessNames)")
-            coordinator.micActivityChanged(isActive: isActive)
+            coordinator.micProcessesChanged(active)
         }
 
         await coordinator.shutdown()
@@ -68,9 +68,9 @@ enum RunCommand {
 /// A browser refusing JavaScript from Apple Events is the one setup step users
 /// forget; without this it only shows up as tabs that never pause.
 @MainActor
-private func warnAboutBrowserScripting(_ controllers: [any MediaController], enabled: Set<MediaControllerID>) {
+private func warnAboutBrowserScripting(_ controllers: [any MediaController], enabled: Set<MediaControllerID>) async {
     for case let browser as BrowserController in controllers where enabled.contains(browser.id) {
-        guard case .disabled = browser.javaScriptAccess() else { continue }
+        guard case .disabled = await browser.javaScriptAccess() else { continue }
         Output.error("WARNING: \(browser.displayName) will not be paused — \(browser.javaScriptDisabledHint)")
     }
 }

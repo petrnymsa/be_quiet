@@ -19,7 +19,7 @@ struct PauseCoordinatorTests {
             scheduler: scheduler
         )
 
-        coordinator.micActivityChanged(isActive: true)
+        coordinator.micProcessesChanged(["teams"])
         #expect(coordinator.phase == .arming)
         #expect(scheduler.pending.map(\.seconds) == [2])
 
@@ -41,11 +41,11 @@ struct PauseCoordinatorTests {
             scheduler: scheduler
         )
 
-        coordinator.micActivityChanged(isActive: true)
+        coordinator.micProcessesChanged(["teams"])
         scheduler.fireNext()
         #expect(await waitUntil { coordinator.phase == .paused })
 
-        coordinator.micActivityChanged(isActive: false)
+        coordinator.micProcessesChanged([])
         #expect(coordinator.phase == .resumePending)
         #expect(scheduler.pending.map(\.seconds) == [3])
 
@@ -65,12 +65,12 @@ struct PauseCoordinatorTests {
             scheduler: scheduler
         )
 
-        coordinator.micActivityChanged(isActive: true)
+        coordinator.micProcessesChanged(["teams"])
         scheduler.fireNext()
         #expect(await waitUntil { coordinator.phase == .paused })
 
-        coordinator.micActivityChanged(isActive: false)
-        coordinator.micActivityChanged(isActive: true)
+        coordinator.micProcessesChanged([])
+        coordinator.micProcessesChanged(["teams"])
         #expect(coordinator.phase == .paused)
         #expect(scheduler.pending.isEmpty)
         #expect(spotify.resumed.isEmpty)
@@ -86,7 +86,7 @@ struct PauseCoordinatorTests {
             scheduler: scheduler
         )
 
-        coordinator.micActivityChanged(isActive: true)
+        coordinator.micProcessesChanged(["teams"])
         scheduler.fireNext()
         #expect(await waitUntil { coordinator.phase == .paused })
 
@@ -94,7 +94,7 @@ struct PauseCoordinatorTests {
         #expect(spotify.resumed == [.spotify])
         #expect(coordinator.heldReceipts.isEmpty)
 
-        coordinator.micActivityChanged(isActive: false)
+        coordinator.micProcessesChanged([])
         #expect(scheduler.pending.isEmpty)
     }
 
@@ -110,13 +110,30 @@ struct PauseCoordinatorTests {
         let (events, continuation) = AsyncStream<MicEvent>.makeStream()
         let snapshot = MicSnapshot(devices: [], processes: [], usesDeviceLevelFallback: false)
         continuation.yield(.deviceLevelActivityChanged(isActive: true))
-        continuation.yield(.micActivityChanged(isActive: true, reason: "test", snapshot: snapshot))
+        continuation.yield(.micProcessesChanged(active: ["teams"], reason: "test", snapshot: snapshot))
         continuation.finish()
 
         await coordinator.run(events)
         #expect(coordinator.isMicActive)
         #expect(coordinator.phase == .arming)
         #expect(scheduler.pending.count == 1)
+    }
+
+    @Test("a process already holding the microphone at startup starts nothing")
+    func baselineStartsNothing() async {
+        let spotify = FakeController(id: .spotify, pauseResult: .spotify)
+        let scheduler = FakeScheduler()
+        let coordinator = PauseCoordinator(
+            controllers: [spotify],
+            settings: .test(),
+            scheduler: scheduler
+        )
+
+        coordinator.seedBaseline(["com.google.Chrome.helper"])
+        coordinator.micProcessesChanged(["com.google.Chrome.helper"])
+        #expect(coordinator.isMicActive)
+        #expect(coordinator.phase == .idle)
+        #expect(scheduler.pending.isEmpty)
     }
 
     @Test("turning a controller off resumes it immediately")
@@ -129,7 +146,7 @@ struct PauseCoordinatorTests {
             scheduler: scheduler
         )
 
-        coordinator.micActivityChanged(isActive: true)
+        coordinator.micProcessesChanged(["teams"])
         scheduler.fireNext()
         #expect(await waitUntil { coordinator.phase == .paused })
 
