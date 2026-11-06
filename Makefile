@@ -1,4 +1,4 @@
-VERSION ?= 0.1.1
+VERSION ?= 0.1.2
 APP = dist/BeQuiet.app
 BUNDLE_ID = cz.nymsa.BeQuiet
 ICONS = Packaging/Icons
